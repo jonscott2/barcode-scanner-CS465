@@ -1,4 +1,4 @@
-<html lang=en><link rel=stylesheet href=barcode-scanner-CS465.03dd2fe1.css><header class=navigation>
+<html lang=en><script type=module src=recipes.5f47a8a2.js></script><link rel=stylesheet href=barcode-scanner-CS465.03dd2fe1.css><header class=navigation>
     <a href=index.html><h1 class=header-title>Barcode Scanner App</h1></a>   
     <ul id="Header List" class=navigationList> 
       <li class=navigationListItem id=1><a href=index.html>Home </a></li>
@@ -16,6 +16,7 @@
 <div class=body>
   <h1 class=header-title>Recipes</h1>
 <button class="Generate styled" type=button>Generate</button>
+  <div id=recipes-results>Click Generate to fetch recipes.</div>
 </div>
 
   <footer class=navigation>
@@ -25,4 +26,9 @@
       <li class=navigationListItem id=3><a href=contact.html>Contact </a></li>
     </ul>
 </footer>
+
+<script type=module>import"./recipes.5f47a8a2.js";var e="undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:"undefined"!=typeof window?window:"undefined"!=typeof global?global:{},t={},n={},o=e.parcelRequirea202;null==o&&((o=function(e){if(e in t)return t[e].exports;if(e in n){var o=n[e];delete n[e];var r={id:e,exports:{}};return t[e]=r,o.call(r.exports,r,r.exports),r.exports}var a=Error("Cannot find module '"+e+"'");throw a.code="MODULE_NOT_FOUND",a}).register=function(e,t){n[e]=t},e.parcelRequirea202=o),o.register;var r=o("iW3id");async function a(){let e=document.getElementById("recipes-results");e.textContent="Generating...";let t=null;try{t=await (0,r.initAuth)()}catch(e){}if(!t)try{t=(0,r.getCurrentUser)()}catch{}let n=null;if(t&&"function"==typeof t.getIdToken)try{n=await t.getIdToken()}catch(e){console.warn("getIdToken failed",e)}n||(n=localStorage.getItem("barcode-scanner/idToken")||null);let o={Accept:"application/json"};if(n)o.Authorization=`Bearer ${n}`;else{let e=localStorage.getItem("barcode-scanner/uid");e&&(o["X-Local-Uid"]=e)}try{let t="localhost"===window.location.hostname||"127.0.0.1"===window.location.hostname,n=await fetch(t?"http://localhost:8788/recipes/from-file":"/recipes/from-file",{method:"GET",headers:o});if(!n.ok){let t=await n.text();e.textContent=`Server error: ${n.status} ${t.slice(0,200)}`;return}if(!(n.headers.get("content-type")||"").toLowerCase().includes("application/json")){let t=await n.text();e.textContent="Unexpected non-JSON response from server: "+t.slice(0,500);return}let r=await n.json();renderRecipesTable(r,e)}catch(t){e.textContent="Fetch failed: "+String(t)}}document.addEventListener("DOMContentLoaded",()=>{let e=document.querySelector("button.Generate.styled");e&&e.addEventListener("click",a)});</script>
+
+<script>function renderRecipesTable(e,t){if(t.innerHTML="",!e||!Array.isArray(e)||0===e.length){t.textContent="No recipes found.";return}let n=document.createElement("table");n.style.width="100%",n.style.borderCollapse="collapse",n.style.marginTop="8px";let d=document.createElement("thead"),l=document.createElement("tr");["Image","Title","Used Ingredient","Missing Ingredient"].forEach(e=>{let t=document.createElement("th");t.textContent=e,t.style.textAlign="left",t.style.padding="6px",t.style.borderBottom="1px solid #ccc",l.appendChild(t)}),d.appendChild(l),n.appendChild(d);let i=document.createElement("tbody");for(let t of e){let e=document.createElement("tr"),n=document.createElement("td");n.style.padding="6px";let d=document.createElement("img");d.src=t.image||"",d.alt=t.title||"",d.style.width="64px",d.style.height="64px",d.style.objectFit="cover",d.loading="lazy",n.appendChild(d),e.appendChild(n);let l=document.createElement("td");l.style.padding="6px",l.textContent=t.title||"(no title)",e.appendChild(l);let a=document.createElement("td");a.style.padding="6px",a.textContent=String(null!=t.usedIngredientCount?t.usedIngredientCount:"0"),e.appendChild(a);let p=document.createElement("td");p.style.padding="6px",p.textContent=String(null!=t.missedIngredientCount?t.missedIngredientCount:"0"),e.appendChild(p),i.appendChild(e)}n.appendChild(i),t.appendChild(n)}</script>
+
 
