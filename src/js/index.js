@@ -22,11 +22,54 @@ import './components/bs-result.js';
 import './components/bs-settings.js';
 import './components/bs-history.js';
 import './components/bs-auth.js';
-import { initAuth, signInAnonymous } from './services/firebase-auth.js';
+import {
+  initAuth,
+  signInAnonymous,
+  getCurrentUser,
+  onAuthStateChange
+} from './services/firebase-auth.js';
 import { initFirestore, saveScan, syncPendingScans } from './services/firebase-scans.js';
 import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-config.js';
 
 (async function () {
+  // Check if we're on /scanner route - require authentication
+  const path = window.location.pathname;
+  const isScannerPage =
+    path === '/scanner' || path.endsWith('/scanner.html') || path.includes('/scanner');
+
+  if (isScannerPage) {
+    // Require authentication for scanner page
+    try {
+      if (isFirebaseConfigured()) {
+        await initFirestore();
+        await initAuth();
+
+        // Check authentication immediately
+        const user = getCurrentUser();
+        if (!user) {
+          // Not authenticated - redirect to login
+          window.location.href = '/login.html';
+          return; // Stop execution
+        }
+      } else {
+        // Firebase not configured - redirect to login
+        window.location.href = '/login.html';
+        return;
+      }
+    } catch (error) {
+      log.error('Error initializing Firebase on scanner page:', error);
+      window.location.href = '/login.html';
+      return;
+    }
+
+    // Set up auth state listener to redirect if user signs out
+    onAuthStateChange(user => {
+      if (!user && isScannerPage) {
+        window.location.href = '/';
+      }
+    });
+  }
+
   // Initialize Firebase Authentication and Firestore
   try {
     // If a runtime config was injected into `window.__FIREBASE_CONFIG__`, initialize Firebase now.
@@ -35,32 +78,33 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
       log.info('Initializing Firebase...');
       await initFirestore();
 
-      // Initialize auth and automatically sign in anonymously if no user
+      // Initialize auth - DO NOT auto-sign in anonymously on /scanner
       const user = await initAuth();
-      if (!user) {
-        log.info('No user signed in, signing in anonymously...');
-        await signInAnonymous();
-      }
+      // Don't auto-sign in - require explicit login
 
-      // Sync any pending scans from offline mode
-      const { syncedCount } = await syncPendingScans();
-      if (syncedCount > 0) {
-        toastify(`Synced ${syncedCount} scans from offline mode`, { variant: 'success' });
-      }
-
-      // Listen for online/offline events
-      window.addEventListener('online', async () => {
-        log.info('Back online, syncing pending scans...');
+      // If no user and we're on /scanner, redirect already happened above
+      // Continue with sync if user exists
+      if (user) {
+        // Sync any pending scans from offline mode
         const { syncedCount } = await syncPendingScans();
         if (syncedCount > 0) {
-          toastify(`Synced ${syncedCount} scans`, { variant: 'success' });
+          toastify(`Synced ${syncedCount} scans from offline mode`, { variant: 'success' });
         }
-      });
 
-      window.addEventListener('offline', () => {
-        log.info('Offline mode - scans will be saved locally');
-        toastify('Offline mode - scans will sync when online', { variant: 'warning' });
-      });
+        // Listen for online/offline events
+        window.addEventListener('online', async () => {
+          log.info('Back online, syncing pending scans...');
+          const { syncedCount } = await syncPendingScans();
+          if (syncedCount > 0) {
+            toastify(`Synced ${syncedCount} scans`, { variant: 'success' });
+          }
+        });
+
+        window.addEventListener('offline', () => {
+          log.info('Offline mode - scans will be saved locally');
+          toastify('Offline mode - scans will sync when online', { variant: 'warning' });
+        });
+      }
     } else {
       log.info('Firebase not configured - using local storage only');
     }
@@ -95,6 +139,9 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
   const SCAN_RATE_LIMIT = 1000;
   let scanTimeoutId = null;
   let shouldScan = true;
+  let bulkScanMode = false;
+  let currentSessionId = null;
+  let bulkScanCount = 0;
 
   // By default the dialog elements are hidden for browsers that don't support the dialog element.
   // If the dialog element is supported, we remove the hidden attribute and the dialogs' visibility
@@ -177,6 +224,87 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
     if (brand.textContent) itemInfoEl.appendChild(brand);
   }
 
+  /**
+   * Show manual entry dialog for unknown products
+   */
+  function showManualEntryDialog(barcodeValue, barcodeFormat, panelEl) {
+    const dialog = document.createElement('dialog');
+    dialog.innerHTML = `
+      <div style="padding: 2rem; max-width: 500px;">
+        <h2 style="margin-bottom: 1rem;">Product Not Found</h2>
+        <p style="margin-bottom: 1.5rem; color: #6b7280;">Barcode: <strong>${barcodeValue}</strong></p>
+        <p style="margin-bottom: 1.5rem;">Enter product information manually:</p>
+        <form id="manualEntryForm" style="display: flex; flex-direction: column; gap: 1rem;">
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Product Name *</label>
+            <input type="text" id="manualTitle" required style="width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px;">
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Brand</label>
+            <input type="text" id="manualBrand" style="width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px;">
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Description</label>
+            <textarea id="manualDescription" rows="3" style="width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px;"></textarea>
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Image URL (optional)</label>
+            <input type="url" id="manualImageUrl" style="width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px;">
+          </div>
+          <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+            <button type="submit" style="flex: 1; padding: 0.75rem; background: #667eea; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Save</button>
+            <button type="button" id="cancelManualEntry" style="flex: 1; padding: 0.75rem; background: #f3f4f6; color: #374151; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Cancel</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.showModal();
+
+    dialog.querySelector('#manualEntryForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const title = dialog.querySelector('#manualTitle').value;
+      const brand = dialog.querySelector('#manualBrand').value;
+      const description = dialog.querySelector('#manualDescription').value;
+      const imageUrl = dialog.querySelector('#manualImageUrl').value;
+
+      try {
+        const result = await saveScan({
+          value: barcodeValue,
+          format: barcodeFormat,
+          title: title,
+          brand: brand,
+          description: description,
+          imageUrl: imageUrl,
+          sessionId: currentSessionId,
+          metadata: {
+            source: 'camera',
+            hasProductInfo: true,
+            manuallyEntered: true
+          }
+        });
+
+        if (result.error) {
+          toastify('Error saving product', { variant: 'error' });
+        } else {
+          toastify('Product saved!', { variant: 'success' });
+          renderItemDetails(panelEl, { title, brand, description, imageUrl });
+        }
+      } catch (error) {
+        log.error('Error saving manual entry:', error);
+        toastify('Error saving product', { variant: 'error' });
+      }
+
+      dialog.close();
+      document.body.removeChild(dialog);
+    });
+
+    dialog.querySelector('#cancelManualEntry').addEventListener('click', () => {
+      dialog.close();
+      document.body.removeChild(dialog);
+    });
+  }
+
   async function handleFetchedItemInfo(barcodeValue, panelEl, barcodeFormat = '') {
     try {
       const info = await fetchItemInfo(barcodeValue);
@@ -202,54 +330,144 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
           // non-fatal
         }
 
+        // Extract image URL from API response
+        const imageUrl = info.images?.[0] || info.image_url || info.imageUrl || info.image || '';
+
+        // Extract expiration date if available
+        let expirationDate = null;
+        if (info.expirationDate || info.expires_at || info.expiry_date) {
+          expirationDate = info.expirationDate || info.expires_at || info.expiry_date;
+        }
+
         // Save scan to Firestore with product info
         try {
-          await saveScan({
+          const result = await saveScan({
             value: barcodeValue,
             format: barcodeFormat,
             title: info.title || info.name || info.alias || '',
             brand: info.brand || '',
             description: info.description || '',
+            imageUrl: imageUrl,
+            expirationDate: expirationDate,
+            sessionId: currentSessionId,
             metadata: {
               source: 'camera',
-              hasProductInfo: true
+              hasProductInfo: true,
+              bulkScanMode: bulkScanMode,
+              apiResponse: {
+                category: info.category || '',
+                upc: info.upc || barcodeValue
+              }
             }
           });
+
+          if (result.error) {
+            log.error('Error saving scan to Firestore:', result.error);
+          } else {
+            log.info('Scan saved successfully:', { scanId: result.scanId, barcode: barcodeValue });
+          }
         } catch (saveError) {
-          log.warn('Error saving scan to Firestore:', saveError);
+          log.error('Error saving scan to Firestore:', saveError);
           // Non-fatal - scan is still saved to local history
         }
 
         return info;
       } else {
-        // Save scan without product info
+        // Product not found - show manual entry option
+        if (bulkScanMode) {
+          // In bulk mode, save immediately and continue scanning
+          try {
+            const result = await saveScan({
+              value: barcodeValue,
+              format: barcodeFormat,
+              title: `Unknown Product (${barcodeValue})`,
+              sessionId: currentSessionId,
+              metadata: {
+                source: 'camera',
+                hasProductInfo: false,
+                bulkScanMode: true,
+                needsManualEntry: true
+              }
+            });
+            if (!result.error) {
+              bulkScanCount++;
+              toastify(`Item ${bulkScanCount} saved - Unknown product`, {
+                variant: 'info',
+                duration: 2000
+              });
+            }
+          } catch (saveError) {
+            log.error('Error saving scan to Firestore:', saveError);
+          }
+        } else {
+          // In normal mode, show manual entry dialog
+          showManualEntryDialog(barcodeValue, barcodeFormat, panelEl);
+        }
+
+        // Save scan without product info (fallback)
         try {
-          await saveScan({
+          const result = await saveScan({
             value: barcodeValue,
             format: barcodeFormat,
+            sessionId: currentSessionId,
             metadata: {
               source: 'camera',
               hasProductInfo: false
             }
           });
+          if (result.error) {
+            log.error('Error saving scan to Firestore:', result.error);
+          }
         } catch (saveError) {
-          log.warn('Error saving scan to Firestore:', saveError);
+          log.error('Error saving scan to Firestore:', saveError);
         }
       }
     } catch (err) {
+      log.error('Error fetching item info:', err);
       // ignore lookup errors but still save scan
-      try {
-        await saveScan({
-          value: barcodeValue,
-          format: barcodeFormat,
-          metadata: {
-            source: 'camera',
-            hasProductInfo: false,
-            lookupFailed: true
+      if (bulkScanMode) {
+        try {
+          const result = await saveScan({
+            value: barcodeValue,
+            format: barcodeFormat,
+            title: `Unknown Product (${barcodeValue})`,
+            sessionId: currentSessionId,
+            metadata: {
+              source: 'camera',
+              hasProductInfo: false,
+              lookupFailed: true,
+              error: err.message,
+              bulkScanMode: true,
+              needsManualEntry: true
+            }
+          });
+          if (!result.error) {
+            bulkScanCount++;
+            toastify(`Item ${bulkScanCount} saved`, { variant: 'info', duration: 2000 });
           }
-        });
-      } catch (saveError) {
-        log.warn('Error saving scan to Firestore:', saveError);
+        } catch (saveError) {
+          log.error('Error saving scan to Firestore:', saveError);
+        }
+      } else {
+        showManualEntryDialog(barcodeValue, barcodeFormat, panelEl);
+        try {
+          const result = await saveScan({
+            value: barcodeValue,
+            format: barcodeFormat,
+            sessionId: currentSessionId,
+            metadata: {
+              source: 'camera',
+              hasProductInfo: false,
+              lookupFailed: true,
+              error: err.message
+            }
+          });
+          if (result.error) {
+            log.error('Error saving scan to Firestore:', result.error);
+          }
+        } catch (saveError) {
+          log.error('Error saving scan to Firestore:', saveError);
+        }
       }
     }
   }
@@ -320,6 +538,17 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
 
       triggerScanEffects();
 
+      // In bulk mode, continue scanning automatically
+      if (bulkScanMode) {
+        bulkScanCount++;
+        toastify(`Item ${bulkScanCount} saved`, { variant: 'success', duration: 1500 });
+        // Continue scanning immediately
+        if (shouldScan) {
+          scanTimeoutId = setTimeout(() => scan(), SCAN_RATE_LIMIT);
+        }
+        return;
+      }
+
       if (!settings?.continueScanning) {
         if (scanTimeoutId) {
           clearTimeout(scanTimeoutId);
@@ -349,7 +578,37 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
     scanFrameEl?.removeAttribute('hidden');
     videoCaptureActionsEl?.removeAttribute('hidden');
     // hideResult(cameraPanel);
+
+    // Generate session ID if starting bulk scan mode
+    if (bulkScanMode && !currentSessionId) {
+      currentSessionId = generateSessionId();
+      bulkScanCount = 0;
+      toastify('Bulk scan mode started', { variant: 'info' });
+    }
+
     scan();
+  }
+
+  /**
+   * Toggle bulk scan mode
+   */
+  const bulkScanToggle = document.getElementById('bulkScanToggle');
+  if (bulkScanToggle) {
+    bulkScanToggle.addEventListener('click', () => {
+      bulkScanMode = !bulkScanMode;
+
+      if (bulkScanMode) {
+        bulkScanToggle.classList.add('active');
+        currentSessionId = generateSessionId();
+        bulkScanCount = 0;
+        toastify('Bulk scan mode ON - Camera stays open', { variant: 'success' });
+      } else {
+        bulkScanToggle.classList.remove('active');
+        currentSessionId = null;
+        bulkScanCount = 0;
+        toastify('Bulk scan mode OFF', { variant: 'info' });
+      }
+    });
   }
 
   /**
@@ -641,10 +900,10 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
 
   /**
    * Handles the click event on the history button.
-   * It is responsible for displaying the history dialog.
+   * Navigates to the dedicated history page.
    */
   function handleHistoryButtonClick() {
-    historyDialog.open = true;
+    window.location.href = '/history';
   }
 
   /**

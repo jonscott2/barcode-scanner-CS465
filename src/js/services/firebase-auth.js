@@ -4,14 +4,12 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  updateProfile
+  updateProfile,
+  sendPasswordResetEmail,
+  sendEmailVerification
 } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from './firebase-config.js';
 import { log } from '../utils/log.js';
-import { uuid } from '../utils/uuid.js';
-
-const LOCAL_USERS_KEY = 'barcode-scanner/localUsers';
-const LOCAL_CURRENT_USER_KEY = 'barcode-scanner/localCurrentUser';
 
 /**
  * Authentication service for Firebase
@@ -21,38 +19,13 @@ const LOCAL_CURRENT_USER_KEY = 'barcode-scanner/localCurrentUser';
 let currentUser = null;
 let authStateListeners = [];
 
-function _notifyAuthListeners(user) {
-  authStateListeners.forEach(listener => {
-    try { listener(user); } catch (e) { log.error('Error in auth state listener:', e); }
-  });
-}
-
 /**
  * Initialize authentication and set up auth state listener
  */
 export function initAuth() {
   if (!isFirebaseConfigured() || !auth) {
     log.warn('Firebase not configured. Running in local-only mode.');
-    // Attempt to load local current user
-    try {
-      const raw = localStorage.getItem(LOCAL_CURRENT_USER_KEY);
-      if (raw) {
-        currentUser = JSON.parse(raw);
-      } else {
-        currentUser = null;
-      }
-    } catch (e) {
-      currentUser = null;
-    }
-
-    // Notify listeners asynchronously
-    setTimeout(() => {
-      authStateListeners.forEach(listener => {
-        try { listener(currentUser); } catch (err) { log.error('Error in auth state listener:', err); }
-      });
-    }, 0);
-
-    return Promise.resolve(currentUser);
+    return Promise.resolve(null);
   }
 
   return new Promise((resolve, reject) => {
@@ -60,7 +33,7 @@ export function initAuth() {
       auth,
       user => {
         currentUser = user;
-        
+
         // Notify all listeners
         authStateListeners.forEach(listener => {
           try {
@@ -88,29 +61,22 @@ export function initAuth() {
  * @returns {Function} Unsubscribe function
  */
 export function onAuthStateChange(callback) {
-  // Always support auth state listeners; for local-only mode this will use localStorage
-  authStateListeners.push(callback);
-
-  // Call immediately with current user (may be null)
-  try { if (currentUser !== undefined) callback(currentUser); } catch (e) { log.error('Auth listener error:', e); }
-
   if (!isFirebaseConfigured() || !auth) {
-    // Return an unsubscribe that removes the listener
-    return () => {
-      authStateListeners = authStateListeners.filter(l => l !== callback);
-    };
+    // Return a no-op unsubscribe function if Firebase is not configured
+    return () => {};
   }
 
-  // If Firebase is configured, delegate to Firebase's listener and also keep local registry
-  const unsubscribe = onAuthStateChanged(auth, user => {
+  authStateListeners.push(callback);
+
+  // Call immediately with current user
+  if (currentUser !== null) {
+    callback(currentUser);
+  }
+
+  return onAuthStateChanged(auth, user => {
     currentUser = user;
     callback(user);
   });
-
-  return () => {
-    unsubscribe();
-    authStateListeners = authStateListeners.filter(l => l !== callback);
-  };
 }
 
 /**
@@ -120,18 +86,7 @@ export function onAuthStateChange(callback) {
  */
 export async function signInAnonymous() {
   if (!isFirebaseConfigured() || !auth) {
-    // Local fallback anonymous user
-    try {
-      const localUser = { uid: `local-${uuid()}`, isAnonymous: true };
-      currentUser = localUser;
-      try { localStorage.setItem(LOCAL_CURRENT_USER_KEY, JSON.stringify(localUser)); } catch (e) {}
-      log.info('Signed in anonymously (local):', localUser.uid);
-      // Notify listeners about auth change
-      _notifyAuthListeners(currentUser);
-      return { error: null, user: localUser };
-    } catch (err) {
-      return { error: err, user: null };
-    }
+    return { error: new Error('Firebase not configured'), user: null };
   }
 
   try {
@@ -147,44 +102,19 @@ export async function signInAnonymous() {
 
 /**
  * Create a new account with email and password
- * @param {string} email 
- * @param {string} password 
+ * @param {string} email
+ * @param {string} password
  * @param {string} displayName - Optional display name
  * @returns {Promise<{error: null|Error, user: object|null}>}
  */
 export async function createAccount(email, password, displayName = '') {
   if (!isFirebaseConfigured() || !auth) {
-    // Local fallback: create a user in localStorage (for development/testing only)
-    try {
-      if (!email || !password) {
-        return { error: new Error('Email and password are required for local account'), user: null };
-      }
-
-      const raw = localStorage.getItem(LOCAL_USERS_KEY);
-      const users = raw ? JSON.parse(raw) : [];
-
-      if (users.find(u => u.email === email)) {
-        return { error: Object.assign(new Error('auth/email-already-in-use'), { code: 'auth/email-already-in-use' }), user: null };
-      }
-
-      const newUser = { uid: `local-${uuid()}`, email, password, displayName, isAnonymous: false };
-      users.push(newUser);
-      localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
-      currentUser = { uid: newUser.uid, email: newUser.email, displayName: newUser.displayName, isAnonymous: false };
-      localStorage.setItem(LOCAL_CURRENT_USER_KEY, JSON.stringify(currentUser));
-      log.info('Local account created:', currentUser.uid);
-      // Notify listeners about new account / sign-in
-      _notifyAuthListeners(currentUser);
-      return { error: null, user: currentUser };
-    } catch (error) {
-      log.error('Error creating local account:', error);
-      return { error, user: null };
-    }
+    return { error: new Error('Firebase not configured'), user: null };
   }
 
   try {
     const result = await createUserWithEmailAndPassword(auth, email, password);
-    
+
     // Set display name if provided
     if (displayName) {
       await updateProfile(result.user, { displayName });
@@ -201,29 +131,13 @@ export async function createAccount(email, password, displayName = '') {
 
 /**
  * Sign in with email and password
- * @param {string} email 
- * @param {string} password 
+ * @param {string} email
+ * @param {string} password
  * @returns {Promise<{error: null|Error, user: object|null}>}
  */
 export async function signInWithEmail(email, password) {
   if (!isFirebaseConfigured() || !auth) {
-    try {
-      const raw = localStorage.getItem(LOCAL_USERS_KEY);
-      const users = raw ? JSON.parse(raw) : [];
-      const found = users.find(u => u.email === email && u.password === password);
-      if (!found) {
-        return { error: Object.assign(new Error('auth/user-not-found'), { code: 'auth/user-not-found' }), user: null };
-      }
-      currentUser = { uid: found.uid, email: found.email, displayName: found.displayName || '', isAnonymous: false };
-      localStorage.setItem(LOCAL_CURRENT_USER_KEY, JSON.stringify(currentUser));
-      log.info('Signed in locally:', currentUser.uid);
-      // Notify listeners about sign-in
-      _notifyAuthListeners(currentUser);
-      return { error: null, user: currentUser };
-    } catch (error) {
-      log.error('Error signing in locally:', error);
-      return { error, user: null };
-    }
+    return { error: new Error('Firebase not configured'), user: null };
   }
 
   try {
@@ -243,17 +157,7 @@ export async function signInWithEmail(email, password) {
  */
 export async function signOut() {
   if (!isFirebaseConfigured() || !auth) {
-    // Local sign out
-    try {
-      currentUser = null;
-      localStorage.removeItem(LOCAL_CURRENT_USER_KEY);
-      log.info('Signed out (local)');
-      // Notify listeners about sign-out
-      _notifyAuthListeners(null);
-      return { error: null };
-    } catch (error) {
-      return { error };
-    }
+    return { error: new Error('Firebase not configured') };
   }
 
   try {
@@ -291,5 +195,41 @@ export function getUserId() {
   return currentUser?.uid || null;
 }
 
+/**
+ * Send password reset email
+ * @param {string} email
+ * @returns {Promise<{error: null|Error}>}
+ */
+export async function resetPassword(email) {
+  if (!isFirebaseConfigured() || !auth) {
+    return { error: new Error('Firebase not configured') };
+  }
 
+  try {
+    await sendPasswordResetEmail(auth, email);
+    log.info('Password reset email sent to:', email);
+    return { error: null };
+  } catch (error) {
+    log.error('Error sending password reset email:', error);
+    return { error };
+  }
+}
 
+/**
+ * Send email verification
+ * @returns {Promise<{error: null|Error}>}
+ */
+export async function sendVerificationEmail() {
+  if (!isFirebaseConfigured() || !auth || !currentUser) {
+    return { error: new Error('Firebase not configured or no user') };
+  }
+
+  try {
+    await sendEmailVerification(currentUser);
+    log.info('Verification email sent');
+    return { error: null };
+  } catch (error) {
+    log.error('Error sending verification email:', error);
+    return { error };
+  }
+}

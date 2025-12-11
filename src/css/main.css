@@ -1,7 +1,7 @@
 :root {
   /* Font variables */
   --font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  
+
   /* Color variables */
   --accent-h: 217.75deg;
   --accent-s: 98.36%;
@@ -425,9 +425,30 @@ video-capture[loading] [slot="actions"] {
   color: var(--text-main);
 }
 
-.torch-button {
+.torch-button,
+.bulk-scan-toggle {
   border: 1px solid var(--border);
   border-radius: calc(var(--border-radius) / 2);
+}
+
+.bulk-scan-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.bulk-scan-toggle:hover {
+  background-color: var(--accent);
+  color: white;
+}
+
+.bulk-scan-toggle.active {
+  background-color: var(--accent);
+  color: white;
+  box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
 }
 
 .zoom-controls button {
@@ -690,7 +711,7 @@ alert-element {
 }
 
 .navigation {
-  margin: 0px 0px; 
+  margin: 0px 0px;
   width: 100%;
   justify-items: center;
   padding: 0.25em;
@@ -715,7 +736,7 @@ alert-element {
 
 .navigationListItem {
 
-  margin: 0px 10px; 
+  margin: 0px 10px;
 }
 .header-title {
   justify-content: center;
