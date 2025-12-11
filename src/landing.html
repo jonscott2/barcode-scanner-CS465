@@ -208,6 +208,10 @@
       border-top: 1px solid var(--border);
     }
 
+    .landing-footer nav a:hover {
+      color: #667eea;
+    }
+
     @media (max-width: 768px) {
       .hero {
         min-height: 70vh;
@@ -227,7 +231,7 @@
     <div class="hero-content">
       <h1>Never Waste Food Again</h1>
       <p>Track your groceries, manage expiration dates, discover recipes, and keep your kitchen organized with smart barcode scanning.</p>
-      <a href="/login" id="getStartedBtn" class="cta-button">Get Started →</a>
+      <a href="/scanner" id="getStartedBtn" class="cta-button">Get Started →</a>
     </div>
   </section>
 
@@ -277,70 +281,24 @@
 
   <!-- Footer -->
   <footer class="landing-footer">
-    <p><strong>Barcode Scanner App</strong> - Smart Food & Product Tracking</p>
-    <p>Built with ❤️ for CS465 | Powered by Firebase & Modern Web Technologies</p>
+    <div style="max-width: 1200px; margin: 0 auto;">
+      <p><strong>Barcode Scanner App</strong> - Smart Food & Product Tracking</p>
+      <p>Built with ❤️ for CS465 | Powered by Firebase & Modern Web Technologies</p>
+      <nav style="margin-top: 1.5rem; display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap;">
+        <a href="/scanner" style="color: var(--text-muted); text-decoration: none; transition: color 0.2s;">Scanner</a>
+        <a href="/history" style="color: var(--text-muted); text-decoration: none; transition: color 0.2s;">History</a>
+        <a href="/items" style="color: var(--text-muted); text-decoration: none; transition: color 0.2s;">Scanned Items</a>
+        <a href="/login" style="color: var(--text-muted); text-decoration: none; transition: color 0.2s;">Login</a>
+      </nav>
+    </div>
   </footer>
 
   <script type="module">
-    import { getCurrentUser, initAuth } from './js/services/firebase-auth.js';
-    import { isFirebaseConfigured } from './js/services/firebase-config.js';
-
-    (async function() {
-      try {
-        // Initialize Firebase to check auth state
-        if (isFirebaseConfigured()) {
-          try {
-            await initAuth();
-          } catch (e) {
-            console.warn('Firebase init error:', e);
-          }
-        }
-
-        // Wait for DOM to be ready
-        const getStartedBtn = document.getElementById('getStartedBtn');
-
-        if (!getStartedBtn) {
-          console.error('Get Started button not found!');
-          return;
-        }
-
-        console.log('Get Started button found, attaching click handler');
-
-        getStartedBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-
-          console.log('Get Started button clicked');
-
-          try {
-            // Check if user is authenticated
-            const user = getCurrentUser();
-            console.log('Current user:', user ? 'authenticated' : 'not authenticated');
-
-            if (user) {
-              // User is logged in - go directly to scanner
-              console.log('Redirecting to /scanner');
-              window.location.replace('/scanner');
-            } else {
-              // User is not logged in - go to login/signup
-              console.log('Redirecting to /login');
-              window.location.replace('/login');
-            }
-          } catch (error) {
-            console.error('Error in Get Started button handler:', error);
-            // Fallback: always go to login if there's an error
-            window.location.replace('/login');
-          }
-        });
-      } catch (error) {
-        console.error('Error setting up Get Started button:', error);
-        // Fallback: make button work as a simple link
-        const getStartedBtn = document.getElementById('getStartedBtn');
-        if (getStartedBtn) {
-          getStartedBtn.href = '/login';
-        }
-      }
-    })();
+    // Simple redirect to scanner - scanner page will handle authentication
+    document.getElementById('getStartedBtn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.location.href = '/scanner';
+    });
   </script>
 </body>
 </html>
