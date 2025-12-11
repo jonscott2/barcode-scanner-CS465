@@ -21,6 +21,8 @@
     </div>
   </noscript>
 
+  <div id="root"></div>
+
   <div class="global-actions" id="globalActions" hidden>
     <button id="authBtn" aria-label="Account">
       <svg xmlns="http://www.w3.org/2000/svg" width="1.125em" height="1.125em" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
@@ -49,11 +51,11 @@
 
   <!--added by Ellie -->
   <header class="navigation">
-    <a href= "#"><h1 class="header-title">Barcode Scanner App</h1></a>   
+    <a href= "./index.html"><h1 class="header-title">Barcode Scanner App</h1></a>   
     <ul id = "Header List" class = "navigationList"> 
-      <li class="navigationListItem" id="1"><a href="#">Home </a></li>
-      <li class="navigationListItem" id="2"><a href="#">Items </a></li>
-      <li class="navigationListItem" id="3"><a href="#">Recipes </a></li>
+      <li class="navigationListItem" id="1"><a href="./index.html">Home </a></li>
+      <li class="navigationListItem" id="2"><a href="./Ingredients.html">Ingredients </a></li>
+      <li class="navigationListItem" id="3"><a href="./recipes.html">Recipes </a></li>
       <li class="navigationListItem">
         <form onSubmit={submitAnswer}>
         <input type="text" value=""></input>
@@ -292,16 +294,17 @@
   </modal-element>
 
   <script src="./js/register-service-worker.js" type="module"></script>
+  <script type="module" src="./index.jsx"></script>
   <script src="./js/index.js" type="module"></script>
 </body>
 
 
 <!-- Ellie -->
-<footer class="navigation">
+  <footer class="navigation">
     <ul id = "Navigation Footer List" class = "navigationList"> 
-      <li class="navigationListItem" id="1"><a href="#">About </a></li>
-      <li class="navigationListItem" id="2"><a href="#">FAQ </a></li>
-      <li class="navigationListItem" id="3"><a href="#">Contact </a></li>
+      <li class="navigationListItem" id="1"><a href="./about.html">About </a></li>
+      <li class="navigationListItem" id="2"><a href="./faq.html">FAQ </a></li>
+      <li class="navigationListItem" id="3"><a href="./contact.html">Contact </a></li>
     </ul>
 </footer>
 

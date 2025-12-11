@@ -10,7 +10,7 @@ The project aims to address the significant issue of food waste in the U.S., whe
 - Implement a list to track scanned ingredients.
 - Add expiration timers to each ingredient, potentially using national average data.
 - Store the ingredient list in a database.
-- Develop logic for suggesting recipes based on the user’s available ingredients.
+- Develop logic for suggesting recipes based on the user's available ingredients.
 
 **List of which project parts will be worked on by which team member(s):**
 
