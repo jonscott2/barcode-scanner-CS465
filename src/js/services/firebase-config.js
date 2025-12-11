@@ -66,4 +66,48 @@ if (isFirebaseConfigured()) {
   }
 }
 
-export { app, auth, db, analytics, isFirebaseConfigured };
+/**
+ * Initialize Firebase from runtime configuration
+ * This function checks for window.__FIREBASE_CONFIG__ and reinitializes Firebase if needed
+ */
+const initFirebaseRuntime = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  // If Firebase is already initialized, don't reinitialize
+  if (app) {
+    return;
+  }
+
+  // Check for runtime config override
+  if (window.__FIREBASE_CONFIG__) {
+    Object.assign(firebaseConfig, window.__FIREBASE_CONFIG__);
+    
+    // Re-check if Firebase should be configured
+    if (isFirebaseConfigured()) {
+      try {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        // Initialize Analytics if supported
+        if (typeof window !== 'undefined') {
+          isSupported()
+            .then(supported => {
+              if (supported) {
+                analytics = getAnalytics(app);
+              }
+            })
+            .catch(() => {
+              // Analytics not supported or failed to initialize
+            });
+        }
+      } catch (error) {
+        console.error('Error initializing Firebase from runtime config:', error);
+      }
+    }
+  }
+};
+
+export { app, auth, db, analytics, isFirebaseConfigured, initFirebaseRuntime };
