@@ -1,4 +1,30 @@
 {
+  "author": {
+    "name": "Jonathan Scott",
+    "email": "jonathan.scott6@snhu.edu"
+  },
+  "contributors": [
+    {
+      "name": "Elena Guzman",
+      "email": "elena.guzman@snhu.edu"
+    },
+    {
+      "name": "Jonathan Corwin",
+      "email": "jonathan.corwin@snhu.edu"
+    },
+    {
+      "name": "Isacc Akhtar Zada",
+      "email": "isacc.akhtarzada@snhu.edu"
+    },
+    {
+      "name": "Samual Kwibe",
+      "email": "samual.kwibe@snhu.edu"
+    },
+    {
+      "name": "George Raptis",
+      "email": "georapbox@gmail.com"
+    }
+  ],
   "name": "barcode-scanner",
   "version": "1.0.0",
   "description": "A Progressive Web Application (PWA) that scans barcodes of various formats, using the Barcode Detection API.",
@@ -9,6 +35,7 @@
     "clean": "rimraf dist .parcel-cache",
     "generateSW": "workbox generateSW",
     "start": "parcel",
+    "start:proxy": "node server/proxy.js",
     "build:parcel": "parcel build --dist-dir=dist --public-url=./",
     "build": "npm-run-all clean build:parcel",
     "postbuild": "npm run generateSW",
@@ -35,10 +62,6 @@
     "upc_e",
     "scanner"
   ],
-  "author": {
-    "name": "George Raptis",
-    "email": "georapbox@gmail.com"
-  },
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/georapbox/barcode-scanner/issues"
@@ -68,7 +91,16 @@
     "@georapbox/resize-observer-element": "~2.0.1",
     "@georapbox/web-share-element": "~3.1.1",
     "barcode-detector": "~3.0.4",
-    "idb-keyval": "~6.2.2"
+    "firebase": "~12.6.0",
+    "firebase-admin": "~13.6.0",
+    "idb-keyval": "~6.2.2",
+    "node-fetch": "~3.3.2",
+    "react": "~18.2.0",
+    "react-dom": "~18.2.0",
+    "react-router-dom": "~6.30.2"
+  },
+  "optionalDependencies": {
+    "express": "^4.18.2"
   },
   "browserslist": "> 0.5%, last 2 versions, not dead"
 }

@@ -1,5 +1,9 @@
 import { getHistory, setHistory } from '../services/storage.js';
+import { getUserScans, deleteAllUserScans, deleteScan } from '../services/firebase-scans.js';
+import { isFirebaseConfigured } from '../services/firebase-config.js';
+import { isAuthenticated } from '../services/firebase-auth.js';
 import { log } from '../utils/log.js';
+import { toastify } from '../helpers/toastify.js';
 
 const styles = /* css */ `
   :host {
@@ -98,6 +102,10 @@ const styles = /* css */ `
     color: var(--danger-color);
   }
 
+  .actions .details-action {
+    color: var(--info-color);
+  }
+
   .actions .delete-action {
     color: var(--danger-color);
     margin-right: -0.5rem;
@@ -128,6 +136,30 @@ const styles = /* css */ `
   ul:not(:empty) + footer > div {
     display: none;
   }
+
+  /* Product info styles */
+  ul li strong {
+    font-weight: 600;
+    color: var(--text-main);
+  }
+
+  ul li small {
+    font-size: 0.85em;
+    opacity: 0.7;
+  }
+
+  .history-item-clickable {
+    cursor: pointer;
+  }
+
+  .history-item-clickable:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+  }
+
+  .history-item-clickable strong {
+    color: var(--links);
+  }
 `;
 
 const template = document.createElement('template');
@@ -137,13 +169,44 @@ template.innerHTML = /* html */ `
   <ul id="historyList"></ul>
   <footer>
     <div>There are no saved items in history.</div>
-    <button type="button" id="emptyHistoryBtn">Empty history</button>
+    <div style="display:flex;gap:0.5rem;">
+      <button type="button" id="emptyHistoryBtn">Empty history</button>
+    </div>
   </footer>
 `;
 
 class BSHistory extends HTMLElement {
   #historyListEl = null;
   #emptyHistoryBtn = null;
+  
+  // Notify a warning before expiry (ms). Default is 1 day (pre-notify one day before expiry).
+  #PRE_NOTIFY_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 1 day
+
+  // Default expiry (7 days) in ms
+  static #DEFAULT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+
+  // Read optional test expiry seconds from URL: ?testExpireSeconds=5
+  static #getDefaultExpiryMs() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const s = params.get('testExpireSeconds');
+      const n = s ? Number(s) : NaN;
+      if (!Number.isNaN(n) && n > 0) {
+        return n * 1000;
+      }
+      // Convenience test mode: `?testMode=1` or `?testMode=true` sets expiry to 5s
+      const testMode = params.get('testMode');
+      if (testMode === '1' || String(testMode).toLowerCase() === 'true') {
+        return 10 * 1000;
+      }
+      // Note: do not auto-detect localhost/file as test mode —
+      // default expiry remains the configured value (7 days) unless
+      // overridden explicitly via URL params.
+    } catch (_e) {
+      // ignore
+    }
+    return BSHistory.#DEFAULT_EXPIRY_MS;
+  }
 
   constructor() {
     super();
@@ -157,16 +220,153 @@ class BSHistory extends HTMLElement {
   async connectedCallback() {
     this.#historyListEl = this.shadowRoot?.getElementById('historyList');
     this.#emptyHistoryBtn = this.shadowRoot?.getElementById('emptyHistoryBtn');
+    
 
-    this.#renderHistoryList((await getHistory())[1] || []);
+    // Always load from local storage first (this persists across logout)
+    const [, rawHistory = []] = await getHistory();
+    
+    let historyData = [];
+    let useFirebase = false;
+    
+    // Try to load from Firestore if configured and user is authenticated
+    try {
+      if (typeof isFirebaseConfigured === 'function' && typeof isAuthenticated === 'function') {
+        if (isFirebaseConfigured() && isAuthenticated()) {
+          useFirebase = true;
+          const { error, scans } = await getUserScans();
+          if (!error && scans) {
+            // Convert Firestore scans to history format
+            const firestoreScans = scans.map(scan => ({
+              value: scan.value || '',
+              addedAt: scan.scannedAt ? scan.scannedAt.getTime() : Date.now(),
+              expiresAt: scan.scannedAt ? scan.scannedAt.getTime() + BSHistory.#getDefaultExpiryMs() : Date.now() + BSHistory.#getDefaultExpiryMs(),
+              notified: false,
+              preNotified: false,
+              title: scan.title || '',
+              brand: scan.brand || '',
+              description: scan.description || '',
+              format: scan.format || '',
+              firestoreId: scan.id || null
+            }));
+            
+            log.info(`Loaded ${firestoreScans.length} scans from Firestore`);
+            
+            // Merge Firestore scans with local storage
+            // Firestore is the source of truth, but keep local scans too
+            const localNormalized = (rawHistory || []).map(item => {
+              if (!item) return null;
+              if (typeof item === 'string') {
+                const addedAt = Date.now();
+                return {
+                  value: item,
+                  addedAt,
+                  expiresAt: addedAt + BSHistory.#getDefaultExpiryMs(),
+                  notified: false,
+                  preNotified: false
+                };
+              }
+              return {
+                value: item.value ?? (item?.barcode ?? ''),
+                addedAt: item.addedAt ?? Date.now(),
+                expiresAt: item.expiresAt ?? (item.addedAt ? item.addedAt + BSHistory.#getDefaultExpiryMs() : Date.now() + BSHistory.#getDefaultExpiryMs()),
+                notified: Boolean(item.notified),
+                preNotified: Boolean(item.preNotified),
+                title: item.title || '',
+                brand: item.brand || '',
+                description: item.description || '',
+                format: item.format || '',
+                firestoreId: item.firestoreId || null
+              };
+            }).filter(Boolean);
+            
+            // Merge: combine Firestore and local, removing duplicates
+            const mergedMap = new Map();
+            
+            // Add Firestore scans first (source of truth)
+            firestoreScans.forEach(scan => {
+              mergedMap.set(scan.value, scan);
+            });
+            
+            // Add local scans that aren't in Firestore
+            localNormalized.forEach(scan => {
+              if (!mergedMap.has(scan.value)) {
+                mergedMap.set(scan.value, scan);
+              }
+            });
+            
+            historyData = Array.from(mergedMap.values());
+          }
+        }
+      }
+    } catch (err) {
+      log.error('Firebase not available or error loading from Firestore:', err);
+      useFirebase = false;
+    }
+    
+    // If Firestore didn't work or not using Firebase, use local storage only
+    if (!useFirebase || historyData.length === 0) {
+      const normalized = (rawHistory || []).map(item => {
+        if (!item) return null;
+        if (typeof item === 'string') {
+          const addedAt = Date.now();
+          return {
+            value: item,
+            addedAt,
+            expiresAt: addedAt + BSHistory.#getDefaultExpiryMs(),
+            notified: false,
+            preNotified: false
+          };
+        }
+
+        // Already an object: ensure required fields exist
+        return {
+          value: item.value ?? (item?.barcode ?? ''),
+          addedAt: item.addedAt ?? Date.now(),
+          expiresAt: item.expiresAt ?? (item.addedAt ? item.addedAt + BSHistory.#getDefaultExpiryMs() : Date.now() + BSHistory.#getDefaultExpiryMs()),
+          notified: Boolean(item.notified),
+          preNotified: Boolean(item.preNotified),
+          title: item.title || '',
+          brand: item.brand || '',
+          description: item.description || '',
+          format: item.format || '',
+          firestoreId: item.firestoreId || null
+        };
+      }).filter(Boolean);
+
+      historyData = normalized;
+
+      // Persist normalized history so storage uses the new format
+      await setHistory(normalized);
+    }
+
+    this.#renderHistoryList(historyData || []);
+
+    // If test mode or explicit test expiry seconds set, show an informative toast for quick testing
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const s = params.get('testExpireSeconds');
+      const tm = params.get('testMode');
+      if (s || tm) {
+        const secs = s ? String(Number(s)) : '10';
+        try { toastify(`Test expiry active: items expire in ${secs} second${secs === '1' ? '' : 's'}`, { variant: 'warning' }); } catch (e) { /* ignore */ }
+      }
+    } catch (_e) {
+      // ignore
+    }
 
     this.#historyListEl?.addEventListener('click', this.#handleHistoryListClick);
     this.#emptyHistoryBtn?.addEventListener('click', this.#handleEmptyHistoryClick);
+
+    this.#startCountdownTimer();
   }
 
   disconnectedCallback() {
     this.#historyListEl?.removeEventListener('click', this.#handleHistoryListClick);
     this.#emptyHistoryBtn?.removeEventListener('click', this.#handleEmptyHistoryClick);
+
+    
+
+    this.#stopCountdownTimer();
   }
 
   /**
@@ -193,11 +393,65 @@ class BSHistory extends HTMLElement {
       return getHistoryError;
     }
 
-    if (history.find(h => h === item)) {
+    // Normalize current history (strings -> objects)
+    const normalized = (history || []).map(h =>
+      typeof h === 'string'
+        ? { value: h, addedAt: Date.now(), expiresAt: Date.now() + BSHistory.#getDefaultExpiryMs(), notified: false, preNotified: false }
+        : { value: h.value ?? h.barcode ?? '', addedAt: h.addedAt ?? Date.now(), expiresAt: h.expiresAt ?? (h.addedAt ? h.addedAt + BSHistory.#getDefaultExpiryMs() : Date.now() + BSHistory.#getDefaultExpiryMs()), notified: Boolean(h.notified), preNotified: Boolean(h.preNotified) }
+    );
+
+    const value = typeof item === 'string' ? item : item.value;
+
+    const existing = normalized.find(h => h.value === value);
+    // If item already exists
+    if (existing) {
+      // If running in test mode (short expiry), refresh the existing item's expiry so tests can reuse same value
+      try {
+        const defaultExpiry = BSHistory.#getDefaultExpiryMs();
+        if (defaultExpiry < BSHistory.#DEFAULT_EXPIRY_MS) {
+          existing.expiresAt = Date.now() + defaultExpiry;
+          existing.notified = false;
+          existing.preNotified = false;
+          const [setErr] = await setHistory(normalized);
+          if (!setErr) {
+            // Update UI countdown if present
+            const li = this.#historyListEl?.querySelector(`li[data-value="${value}"]`);
+            if (li) {
+              const countdownEl = li.querySelector('.history-countdown');
+              if (countdownEl) {
+                countdownEl.dataset.expiresAt = String(existing.expiresAt);
+                countdownEl.textContent = this.#formatRemaining(existing.expiresAt - Date.now());
+              }
+            }
+
+            this.#emitEvent('bs-history-success', {
+              type: 'add',
+              message: 'Barcode expiry refreshed for testing'
+            });
+            // Run immediate countdown check to possibly trigger pre-notify quickly
+            this.#updateCountdowns();
+          }
+          return null;
+        }
+      } catch (_e) {
+        // fallback to not updating existing item
+        return;
+      }
+
+      // Not in test mode: don't add duplicate
       return;
     }
 
-    const data = [...history, item];
+    const addedAt = Date.now();
+    const newItem = {
+      value,
+      addedAt,
+      expiresAt: addedAt + BSHistory.#getDefaultExpiryMs(),
+      notified: false,
+      preNotified: false
+    };
+
+    const data = [...normalized, newItem];
     const [setHistoryError] = await setHistory(data);
 
     if (setHistoryError) {
@@ -207,14 +461,26 @@ class BSHistory extends HTMLElement {
     }
 
     this.#historyListEl?.insertBefore(
-      this.#createHistoryItemElement(item),
+      this.#createHistoryItemElement(newItem),
       this.#historyListEl.firstElementChild
     );
+
+    // Show expiry info toast so users can see the computed expiry (helps verify 7 days)
+    try {
+      const expiresDate = new Date(newItem.expiresAt);
+      const daysLeft = Math.round((newItem.expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+      toastify(`Expires on ${expiresDate.toLocaleString()} (~${daysLeft} day${daysLeft === 1 ? '' : 's'})`, { variant: 'info' });
+    } catch (_e) {
+      // ignore
+    }
 
     this.#emitEvent('bs-history-success', {
       type: 'add',
       message: 'Barcode added to history'
     });
+
+    // Update countdowns and check notifications immediately
+    this.#updateCountdowns();
 
     return null;
   }
@@ -235,6 +501,27 @@ class BSHistory extends HTMLElement {
       message: 'Error removing barcode from history'
     };
 
+    // If Firebase is configured and user is authenticated, delete from Firestore
+    try {
+      if (typeof isFirebaseConfigured === 'function' && typeof isAuthenticated === 'function') {
+        if (isFirebaseConfigured() && isAuthenticated()) {
+          const historyItem = this.#historyListEl?.querySelector(`li[data-value="${item}"]`);
+          const firestoreId = historyItem?.dataset.firestoreId;
+          
+          if (firestoreId && typeof deleteScan === 'function') {
+            const { error } = await deleteScan(firestoreId);
+            if (error) {
+              log.error('Error deleting scan from Firestore:', error);
+              // Continue to delete from local storage anyway
+            }
+          }
+        }
+      }
+    } catch (err) {
+      log.error('Firebase not available:', err);
+      // Continue to delete from local storage anyway
+    }
+
     const [getHistoryError, history = []] = await getHistory();
 
     if (getHistoryError || !Array.isArray(history)) {
@@ -242,7 +529,8 @@ class BSHistory extends HTMLElement {
       return getHistoryError;
     }
 
-    const data = history.filter(el => el !== item);
+    // history may contain objects; filter by value
+    const data = (history || []).filter(el => (typeof el === 'string' ? el !== item : el.value !== item));
     const [setHistoryError] = await setHistory(data);
 
     if (setHistoryError) {
@@ -260,6 +548,9 @@ class BSHistory extends HTMLElement {
       message: 'Barcode removed from history'
     });
 
+    // Update countdowns/UI
+    this.#updateCountdowns();
+
     return null;
   }
 
@@ -273,6 +564,26 @@ class BSHistory extends HTMLElement {
       type: 'empty',
       message: 'Error emptying history'
     };
+
+    // If Firebase is configured and user is authenticated, delete all from Firestore
+    try {
+      if (typeof isFirebaseConfigured === 'function' && typeof isAuthenticated === 'function') {
+        if (isFirebaseConfigured() && isAuthenticated()) {
+          if (typeof deleteAllUserScans === 'function') {
+            const { error, deletedCount } = await deleteAllUserScans();
+            if (error) {
+              log.error('Error deleting all scans from Firestore:', error);
+              // Continue to delete from local storage anyway
+            } else {
+              log.info(`Deleted ${deletedCount} scans from Firestore`);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      log.error('Firebase not available:', err);
+      // Continue to delete from local storage anyway
+    }
 
     const [setHistoryError] = await setHistory([]);
 
@@ -289,7 +600,120 @@ class BSHistory extends HTMLElement {
       message: 'History emptied successfully'
     });
 
+    // ensure countdown timer sees empty list
+    this.#updateCountdowns();
+
     return null;
+  }
+
+  /**
+   * Public method to reload history (useful when auth state changes)
+   */
+  async loadHistory() {
+    // Always load from local storage first
+    const [, rawHistory = []] = await getHistory();
+    
+    let historyData = [];
+    let useFirebase = false;
+    
+    // Try to load from Firestore if configured and user is authenticated
+    try {
+      if (typeof isFirebaseConfigured === 'function' && typeof isAuthenticated === 'function') {
+        if (isFirebaseConfigured() && isAuthenticated()) {
+          useFirebase = true;
+          const { error, scans } = await getUserScans();
+          if (!error && scans) {
+            const firestoreScans = scans.map(scan => ({
+              value: scan.value || '',
+              addedAt: scan.scannedAt ? scan.scannedAt.getTime() : Date.now(),
+              expiresAt: scan.scannedAt ? scan.scannedAt.getTime() + BSHistory.#getDefaultExpiryMs() : Date.now() + BSHistory.#getDefaultExpiryMs(),
+              notified: false,
+              preNotified: false,
+              title: scan.title || '',
+              brand: scan.brand || '',
+              description: scan.description || '',
+              format: scan.format || '',
+              firestoreId: scan.id || null
+            }));
+            
+            const localNormalized = (rawHistory || []).map(item => {
+              if (!item) return null;
+              if (typeof item === 'string') {
+                const addedAt = Date.now();
+                return {
+                  value: item,
+                  addedAt,
+                  expiresAt: addedAt + BSHistory.#getDefaultExpiryMs(),
+                  notified: false,
+                  preNotified: false
+                };
+              }
+              return {
+                value: item.value ?? (item?.barcode ?? ''),
+                addedAt: item.addedAt ?? Date.now(),
+                expiresAt: item.expiresAt ?? (item.addedAt ? item.addedAt + BSHistory.#getDefaultExpiryMs() : Date.now() + BSHistory.#getDefaultExpiryMs()),
+                notified: Boolean(item.notified),
+                preNotified: Boolean(item.preNotified),
+                title: item.title || '',
+                brand: item.brand || '',
+                description: item.description || '',
+                format: item.format || '',
+                firestoreId: item.firestoreId || null
+              };
+            }).filter(Boolean);
+            
+            const mergedMap = new Map();
+            firestoreScans.forEach(scan => {
+              mergedMap.set(scan.value, scan);
+            });
+            localNormalized.forEach(scan => {
+              if (!mergedMap.has(scan.value)) {
+                mergedMap.set(scan.value, scan);
+              }
+            });
+            
+            historyData = Array.from(mergedMap.values());
+          }
+        }
+      }
+    } catch (err) {
+      log.error('Firebase not available or error loading:', err);
+      useFirebase = false;
+    }
+    
+    // If Firestore didn't work or not using Firebase, use local storage only
+    if (!useFirebase || historyData.length === 0) {
+      const normalized = (rawHistory || []).map(item => {
+        if (!item) return null;
+        if (typeof item === 'string') {
+          const addedAt = Date.now();
+          return {
+            value: item,
+            addedAt,
+            expiresAt: addedAt + BSHistory.#getDefaultExpiryMs(),
+            notified: false,
+            preNotified: false
+          };
+        }
+        return {
+          value: item.value ?? (item?.barcode ?? ''),
+          addedAt: item.addedAt ?? Date.now(),
+          expiresAt: item.expiresAt ?? (item.addedAt ? item.addedAt + BSHistory.#getDefaultExpiryMs() : Date.now() + BSHistory.#getDefaultExpiryMs()),
+          notified: Boolean(item.notified),
+          preNotified: Boolean(item.preNotified),
+          title: item.title || '',
+          brand: item.brand || '',
+          description: item.description || '',
+          format: item.format || '',
+          firestoreId: item.firestoreId || null
+        };
+      }).filter(Boolean);
+
+      historyData = normalized;
+      await setHistory(normalized);
+    }
+
+    this.#renderHistoryList(historyData || []);
   }
 
   /**
@@ -317,21 +741,56 @@ class BSHistory extends HTMLElement {
    */
   #createHistoryItemElement(item) {
     const li = document.createElement('li');
-    li.setAttribute('data-value', item);
 
+    // `item` is expected to be an object with { value, addedAt, expiresAt }
+    const value = typeof item === 'string' ? item : item.value || '';
+    const expiresAt = item?.expiresAt || Date.now() + BSHistory.#getDefaultExpiryMs();
+    const firestoreId = item?.firestoreId || null;
+    const title = item?.title || '';
+    const brand = item?.brand || '';
+    const description = item?.description || '';
+
+    li.setAttribute('data-value', value);
+    if (firestoreId) {
+      li.setAttribute('data-firestore-id', firestoreId);
+    }
+
+    // Store product details for click event
+    if (title) li.setAttribute('data-title', title);
+    if (brand) li.setAttribute('data-brand', brand);
+    if (description) li.setAttribute('data-description', description);
+
+    // Create the main item display - make it clickable
     let historyItem;
-
     try {
-      new URL(item);
+      new URL(value);
       historyItem = document.createElement('a');
-      historyItem.href = item;
+      historyItem.href = value;
       historyItem.setAttribute('target', '_blank');
       historyItem.setAttribute('rel', 'noreferrer noopener');
     } catch {
       historyItem = document.createElement('span');
+      // Make clickable if we have details to show
+      historyItem.className = 'history-item-clickable';
+      historyItem.setAttribute('data-action', 'view-details');
     }
 
-    historyItem.textContent = item;
+    // Show title if available, with barcode below
+    if (title) {
+      historyItem.innerHTML = `<strong>${title}</strong><br><small>${value}</small>`;
+    } else {
+      historyItem.textContent = value;
+    }
+
+    // countdown element
+    const countdownEl = document.createElement('span');
+    countdownEl.className = 'history-countdown';
+    countdownEl.setAttribute('aria-live', 'polite');
+    countdownEl.dataset.expiresAt = String(expiresAt);
+    countdownEl.textContent = this.#formatRemaining(expiresAt - Date.now());
+
+    li.appendChild(historyItem);
+    li.appendChild(countdownEl);
 
     const actionsEl = document.createElement('div');
     actionsEl.className = 'actions';
@@ -339,15 +798,15 @@ class BSHistory extends HTMLElement {
     const copyEl = document.createElement('custom-clipboard-copy');
     const copyBtn = copyEl.shadowRoot?.querySelector('button');
     copyEl.setAttribute('only-icon', '');
-    copyEl.setAttribute('value', item);
-    copyBtn?.setAttribute('aria-label', `Copy to clipboard ${item}`);
+    copyEl.setAttribute('value', value);
+    copyBtn?.setAttribute('aria-label', `Copy to clipboard ${value}`);
     actionsEl.appendChild(copyEl);
 
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'delete-action';
     removeBtn.setAttribute('data-action', 'delete');
-    removeBtn.setAttribute('aria-label', `Remove from history ${item}`);
+    removeBtn.setAttribute('aria-label', `Remove from history ${value}`);
     removeBtn.innerHTML = /* html */ `
       <svg xmlns="http://www.w3.org/2000/svg" width="1.125em" height="1.125em" fill="currentColor" viewBox="0 0 16 16">
         <path d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5Zm-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5ZM4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06Zm6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528ZM8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5Z"/>
@@ -355,7 +814,6 @@ class BSHistory extends HTMLElement {
     `;
     actionsEl.appendChild(removeBtn);
 
-    li.appendChild(historyItem);
     li.appendChild(actionsEl);
 
     return li;
@@ -369,14 +827,189 @@ class BSHistory extends HTMLElement {
   #handleHistoryListClick = async evt => {
     const target = evt.target;
 
+    // Handle delete button
     if (target.closest('[data-action="delete"]')) {
       const value = target.closest('li').dataset.value;
 
       if (window.confirm(`Delete history item ${value}?`)) {
         this.remove(value);
       }
+      return;
+    }
+
+    // Handle clicking on the item itself to view details
+    if (target.closest('[data-action="view-details"]')) {
+      const listItem = target.closest('li');
+      const value = listItem.dataset.value;
+      const title = listItem.dataset.title || '';
+      const brand = listItem.dataset.brand || '';
+      const description = listItem.dataset.description || '';
+
+      // Show details popup
+      const details = [];
+      if (title) details.push(`📦 Product: ${title}`);
+      if (brand) details.push(`🏷️ Brand: ${brand}`);
+      if (description) details.push(`📝 Description: ${description}`);
+      details.push(`🔢 Barcode: ${value}`);
+
+      // If no product info, show a simple message
+      if (!title && !brand && !description) {
+        alert(`Barcode: ${value}\n\n(No product information available)`);
+      } else {
+        alert(details.join('\n\n'));
+      }
+      return;
     }
   };
+
+  // --- Countdown and notification helpers ---
+
+  #countdownTimerId = null;
+
+  #startCountdownTimer() {
+    if (this.#countdownTimerId) return;
+    // update every 1 second for accurate short-lived tests
+    this.#countdownTimerId = setInterval(() => this.#updateCountdowns(), 1000);
+    // run once immediately
+    this.#updateCountdowns();
+  }
+
+  #stopCountdownTimer() {
+    if (this.#countdownTimerId) {
+      clearInterval(this.#countdownTimerId);
+      this.#countdownTimerId = null;
+    }
+  }
+
+  async #updateCountdowns() {
+    try {
+      const [, history = []] = await getHistory();
+      const normalized = (history || []).map(h =>
+        typeof h === 'string'
+          ? { value: h, addedAt: Date.now(), expiresAt: Date.now() + BSHistory.#getDefaultExpiryMs(), notified: false, preNotified: false }
+          : { value: h.value ?? h.barcode ?? '', addedAt: h.addedAt ?? Date.now(), expiresAt: h.expiresAt ?? (h.addedAt ? h.addedAt + BSHistory.#getDefaultExpiryMs() : Date.now() + BSHistory.#getDefaultExpiryMs()), notified: Boolean(h.notified), preNotified: Boolean(h.preNotified) }
+      );
+
+      const now = Date.now();
+
+      // Determine effective pre-notify threshold. In normal use this is 1 day.
+      // For short/test expiry durations, scale the pre-notify threshold down
+      // so pre-notify is observable during tests. We choose 20% of the
+      // default expiry time but never less than 1 second.
+      const defaultExpiryMs = BSHistory.#getDefaultExpiryMs();
+      let effectivePreNotify = this.#PRE_NOTIFY_THRESHOLD_MS;
+      try {
+        if (defaultExpiryMs < this.#PRE_NOTIFY_THRESHOLD_MS) {
+          effectivePreNotify = Math.max(1000, Math.floor(defaultExpiryMs * 0.2));
+        }
+      } catch (_e) {
+        // fallback to configured threshold
+        effectivePreNotify = this.#PRE_NOTIFY_THRESHOLD_MS;
+      }
+
+      // Update countdown UI
+      const countdownEls = this.shadowRoot?.querySelectorAll('.history-countdown') || [];
+      countdownEls.forEach(el => {
+        const expiresAt = Number(el.dataset.expiresAt) || now;
+        el.textContent = this.#formatRemaining(expiresAt - now);
+      });
+      // Check for items that are nearing expiry and those that reached expiry
+      let updated = false;
+
+      // Count items that will hit pre-notify threshold and haven't been pre-notified yet
+      const nearExpiryCount = normalized.filter(h => h && ((h.expiresAt || 0) - now) > 0 && ((h.expiresAt || 0) - now) <= effectivePreNotify && !h.preNotified).length;
+
+      for (const it of normalized) {
+        if (!it) continue;
+        const timeLeft = (it.expiresAt || 0) - now;
+
+        // Pre-notify when small threshold is reached (only once)
+        if (timeLeft > 0 && timeLeft <= effectivePreNotify && !it.preNotified) {
+          this.#notifyItemWillExpire(it, timeLeft, nearExpiryCount);
+          it.preNotified = true;
+          updated = true;
+        }
+
+        // Notify when expired (only once)
+        if (timeLeft <= 0 && !it.notified) {
+            this.#notifyItemExpired(it);
+          it.notified = true;
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        await setHistory(normalized);
+      }
+    } catch (_err) {
+      // non-fatal
+    }
+  }
+
+  async #notifyItemWillExpire(item, timeLeft, nearExpiryCount = 1) {
+    try {
+      const title = 'Item will expire soon';
+      let body = `${item.value} will expire in ${this.#formatRemaining(timeLeft)}.`;
+      if (Number.isFinite(nearExpiryCount) && nearExpiryCount > 0) {
+        if (nearExpiryCount === 1) {
+          body += ' You have one more item that will expire soon; the next notification will be when it expires.';
+        } else if (nearExpiryCount > 1) {
+          body += ` You have ${nearExpiryCount} items that will expire soon.`;
+        }
+      }
+
+      try { toastify(body, { variant: 'warning' }); } catch (_e) { /* ignore */ }
+
+      if ('Notification' in window) {
+        if (Notification.permission === 'default') {
+          await Notification.requestPermission();
+        }
+
+        if (Notification.permission === 'granted') {
+          new Notification(title, { body });
+        }
+      }
+    } catch (_err) {
+      // non-fatal
+    }
+  }
+
+  #formatRemaining(ms) {
+    if (ms <= 0) return 'Expired';
+    const seconds = Math.floor(ms / 1000);
+    const days = Math.floor(seconds / (24 * 3600));
+    const hours = Math.floor((seconds % (24 * 3600)) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (days > 0) return `${days}d ${hours}h ${minutes}m left`;
+    if (hours > 0) return `${hours}h ${minutes}m ${secs}s left`;
+    if (minutes > 0) return `${minutes}m ${secs}s left`;
+    return `${secs}s left`;
+  }
+
+  async #notifyItemExpired(item) {
+    try {
+      const title = 'Item expired';
+      const body = `${item.value} has expired.`;
+
+      // In-app toast (use danger to indicate expiry)
+      try { toastify(body, { variant: 'danger' }); } catch (_e) { /* ignore */ }
+
+      // Browser notification (request permission when needed)
+      if ('Notification' in window) {
+        if (Notification.permission === 'default') {
+          await Notification.requestPermission();
+        }
+
+        if (Notification.permission === 'granted') {
+          new Notification(title, { body });
+        }
+      }
+    } catch (_err) {
+      // non-fatal
+    }
+  }
 
   /**
    * Handles the click event on the empty history button.

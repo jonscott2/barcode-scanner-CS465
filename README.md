@@ -1,85 +1,46 @@
-# Barcode/QR code Scanner
+**Project Overview:**
 
-A Progressive Web Application (PWA) that scans barcodes of various formats, using the [Barcode Detection API](https://developer.mozilla.org/docs/Web/API/Barcode_Detection_API).
+The project aims to address the significant issue of food waste in the U.S., where the average American discards approximately $2000 worth of edible food annually, contributing to an estimated $408 billion in grocery waste nationwide. The solution is an app designed to help users manage their food inventory by tracking items brought into their homes and suggesting recipes based on available ingredients, those nearing expiration, and user preferences.
 
-> [!NOTE]
-> The Barcode Detection API is part of the [Fugu](https://fugu-tracker.web.app/) project. Currently it is supported only on Chromium browsers in MacOS and Android. For non-supporting browsers, a [polyfill](https://github.com/Sec-ant/barcode-detector) is used.
+**Key Components:**
+1. Barcode Repository Integration: A free barcode repository has been connected to a system that tracks scanned items, recording details such as the item and purchase time.
+3. Recipe API Connection: The app is linked to TheMealDB, a free meal API that searches for meals based on available ingredients, offering recipe suggestions to users.
 
-## Live demo
+**List of which project parts were worked on by which team member(s):**
 
-👉 [Barcode/QR code Scanner](https://georapbox.github.io/barcode-scanner/)
+**Samuel Kwibe:** I worked closely with Jon on the backend of the project, was responsible for fixing the API and ensuring the project runs smoothly.  I worked on a list to maintain scanned items into a database.  
 
-## Features
+**Jon Scott:** Back End. Completed linking the API from https://api.upcdatabase.org/. This API will resolve a 12-14 digit UPC to a product that can be added to our list.  Working on linking the API from https://spoonacular.com/food-api/console#Profile.
 
-Some of the key features of the application include:
+**Jonathan Corwin:** Design and Test - Worked on presentation design.  Also, Worked on creating test cases and implimentation of testing.
 
-- Scan barcodes from web camera
-- Scan barcodes from image files
-- Copy detected barcode to clipboard
-- Share detected barcode via Web Share API (mobile)
-- Offer option to open detected barcode in a new tab if it is a URL
-- Offer to save detected barcodes to history (IndexedDB)
+**Isaac Akhtar Zada:** Front End (Worked on the front end to create a time counter for our app, which will track the time from when the food is purchased until it expires.)
 
-## Screenshots
+**Elena Guzman:** Website design - Worked on the landing page for the web page
 
-The following screenshots show the application in action:
+**How to start:**
 
-![Camera scanner screenshot](screenshots/camera-scanner.png)
-![Image scanner screenshot](screenshots/image-scanner.png)
+You need to start two API's and one react component
 
-## Development
+API 1: 
+cd into server and run the following 2 commands:
 
-Below are the instructions for setting up the development environment.
+$env:UPC_API_KEY = "4190D3F1E6057DD921DA7E426A79AAF3"
 
-### Prerequisites
+npm run start:proxy
 
-- Node.js (v20.x.x)
-- npm (v10.x.x)
+API 2:
 
-### Installation
+cd in a new terminal into server and run the following 2 commands:
 
-Clone the repository to your local machine:
+$env:UPC_API_KEY2 = "fca61d79d6054c04943fdfbf80b32256"
 
-```sh
-git clone git@github.com:georapbox/barcode-scanner.git
-```
+node server/RecipeDB.js
 
-Navigate to the project's directory and install the dependencies:
+React Component
 
-```sh
-npm install
-```
+cd into the main folder where everything is:
 
-### Running the application
+run: npm install
 
-To run the application in development mode, run the following command:
-
-```sh
-npm start -- --open
-```
-
-This will start the development server and open the application in your default web browser.
-
-### Building the application for production
-
-To build the application for production, run the following command:
-
-```sh
-npm run build
-```
-
-This will create a `dist` directory containing the production build of the application.
-
-### Deployment
-
-To deploy the application, run the following command:
-
-```sh
-npm run deploy
-```
-
-This will build the application first and then deploy it to GitHub Pages in the `gh-pages` branch.
-
-## License
-
-[The MIT License (MIT)](https://github.com/georapbox/barcode-scanner/blob/main/LICENSE)
+run npm start
