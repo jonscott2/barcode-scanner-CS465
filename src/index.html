@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21,17 +20,7 @@
     </div>
   </noscript>
 
-  <div id="root"></div>
-
   <div class="global-actions" id="globalActions" hidden>
-    <button id="authBtn" aria-label="Account">
-      <svg xmlns="http://www.w3.org/2000/svg" width="1.125em" height="1.125em" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
-        <path fill-rule="evenodd" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z"/>
-      </svg>
-      <span>Account</span>
-    </button>
-
     <button id="historyBtn" aria-label="History">
       <svg xmlns="http://www.w3.org/2000/svg" width="1.125em" height="1.125em" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
         <path d="M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z"/>
@@ -49,6 +38,8 @@
     </button>
   </div>
 
+<<<<<<< Updated upstream
+=======
   <!--added by Ellie -->
   <header class="navigation">
     <a href= "./index.html"><h1 class="header-title">Barcode Scanner App</h1></a>   
@@ -56,8 +47,9 @@
       <li class="navigationListItem" id="1"><a href="./index.html">Home </a></li>
       <li class="navigationListItem" id="2"><a href="./Ingredients.html">Ingredients </a></li>
       <li class="navigationListItem" id="3"><a href="./recipes.html">Recipes </a></li>
+      <li class="navigationListItem" id="4"><a href="./help.html">Help </a></li>
       <li class="navigationListItem">
-        <form onSubmit={submitAnswer}>
+        <form onsubmit="return false;">
         <input type="text" value=""></input>
         <input type="submit" value="Search"></input>
         </form>
@@ -66,11 +58,8 @@
   </header>
 
 
+>>>>>>> Stashed changes
   <header class="site-header">
-
-
-
-
     <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 512 512" width="5em" height="5em" xml:space="preserve" class="logo" aria-hidden="true">
       <path fill="var(--accent)" d="M93.867,51.2H8.533C3.814,51.2,0,55.014,0,59.733v85.333c0,4.719,3.814,8.533,8.533,8.533s8.533-3.814,8.533-8.533v-76.8 h76.8c4.719,0,8.533-3.814,8.533-8.533S98.586,51.2,93.867,51.2z" />
       <path fill="var(--accent)" d="M503.467,51.2h-85.333c-4.719,0-8.533,3.814-8.533,8.533s3.814,8.533,8.533,8.533h76.8v76.8c0,4.719,3.814,8.533,8.533,8.533c4.719,0,8.533-3.814,8.533-8.533V59.733C512,55.014,508.186,51.2,503.467,51.2z" />
@@ -99,11 +88,6 @@
 
     <h1>Barcode/QR code Scanner</h1>
   </header>
-
-
-
-
-
 
   <div class="container">
     <alert-element variant="danger" id="barcodeReaderError">
@@ -248,14 +232,32 @@
     </p>
   </footer>
 
-  <modal-element id="authDialog" class="popover-dialog auth-dialog" placement="top-end" hidden>
-    <span slot="header">Account</span>
-    <bs-auth></bs-auth>
-  </modal-element>
-
   <modal-element id="historyDialog" class="popover-dialog history-dialog" placement="top-end" hidden>
     <span slot="header">History</span>
     <bs-history></bs-history>
+  </modal-element>
+
+  <modal-element id="helpModal" class="popover-dialog" placement="center" no-auto-close hidden>
+    <span slot="header">
+      Help
+      <button type="button" onclick="document.getElementById('helpModal').setAttribute('hidden', ''); return false;" style="float: right; background: none; border: none; font-size: 1.5em; cursor: pointer; padding: 0; width: auto;">×</button>
+    </span>
+    <div style="padding: 1.5rem; max-width: 600px; max-height: 70vh; overflow-y: auto;">
+      <h2>About This Project</h2>
+      <ul style="margin: 1rem 0; padding-left: 1.5rem; line-height: 1.8;">
+        <li><strong>Barcode Scanner App</strong> - A Progressive Web Application (PWA) for scanning product barcodes using your device's camera</li>
+        <li><strong>Real-time Detection</strong> - Uses the native Barcode Detection API to identify barcodes instantly without server requests</li>
+        <li><strong>Offline Support</strong> - Works completely offline thanks to service worker technology; no internet required for core scanning features</li>
+        <li><strong>7-Day History</strong> - All scanned items are automatically saved with a 7-day expiration countdown for easy tracking</li>
+        <li><strong>Multiple Input Methods</strong> - Scan via webcam in real-time or upload barcode images for offline processing</li>
+        <li><strong>Product Information</strong> - Automatic product lookup displays ingredients, nutritional data, and allergen information</li>
+        <li><strong>Local Security</strong> - Your data stays on your device; optional account management with secure authentication</li>
+        <li><strong>Cross-Platform</strong> - Works on desktop, tablet, and mobile browsers with responsive design</li>
+        <li><strong>Flash Control</strong> - Toggle device flash/torch for better barcode visibility in low light conditions</li>
+        <li><strong>Customizable Settings</strong> - Control notifications, effects (beep/vibrate), and supported barcode formats</li>
+      </ul>
+      <p style="margin-top: 1.5rem; font-size: 0.9rem; color: #666;"><strong>Need more help?</strong> Check the FAQ or contact us for additional support.</p>
+    </div>
   </modal-element>
 
   <modal-element id="settingsDialog" class="popover-dialog settings-dialog" placement="top-end" hidden>
@@ -294,18 +296,6 @@
   </modal-element>
 
   <script src="./js/register-service-worker.js" type="module"></script>
-  <script type="module" src="./index.jsx"></script>
   <script src="./js/index.js" type="module"></script>
 </body>
-
-
-<!-- Ellie -->
-  <footer class="navigation">
-    <ul id = "Navigation Footer List" class = "navigationList"> 
-      <li class="navigationListItem" id="1"><a href="./about.html">About </a></li>
-      <li class="navigationListItem" id="2"><a href="./faq.html">FAQ </a></li>
-      <li class="navigationListItem" id="3"><a href="./contact.html">Contact </a></li>
-    </ul>
-</footer>
-
 </html>
