@@ -320,6 +320,11 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
 
       triggerScanEffects();
 
+      // Dispatch event to notify React components that a scan was completed
+      window.dispatchEvent(new CustomEvent('bs-scan-complete', {
+        detail: { barcodeValue, barcodeFormat }
+      }));
+
       if (!settings?.continueScanning) {
         if (scanTimeoutId) {
           clearTimeout(scanTimeoutId);
@@ -444,6 +449,11 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
           }
 
           triggerScanEffects();
+          
+          // Dispatch event to notify React components that a scan was completed
+          window.dispatchEvent(new CustomEvent('bs-scan-complete', {
+            detail: { barcodeValue, barcodeFormat }
+          }));
         } catch (err) {
           log.error(err);
 
@@ -562,9 +572,14 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
       cameraSelect.appendChild(option);
     });
 
-    if (videoInputDevices.length > 1) {
-      cameraSelect?.addEventListener('change', handleCameraSelectChange);
-      cameraSelect?.removeAttribute('hidden');
+    // Always show camera select and add change handler
+    cameraSelect?.addEventListener('change', handleCameraSelectChange);
+    cameraSelect?.removeAttribute('hidden');
+    
+    // If only one camera, still show the dropdown so user can see which camera is active
+    if (videoInputDevices.length === 1) {
+      // Select the only camera
+      cameraSelect.value = videoInputDevices[0].deviceId;
     }
   }
 

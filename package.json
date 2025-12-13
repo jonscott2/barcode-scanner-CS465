@@ -40,7 +40,9 @@
     "build": "npm-run-all clean build:parcel",
     "postbuild": "npm run generateSW",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "deploy:firebase": "firebase deploy --only hosting",
+    "deploy:firebase:all": "firebase deploy"
   },
   "repository": {
     "type": "git",

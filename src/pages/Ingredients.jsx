@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthProvider.jsx';
+import './Ingredients.css';
 
 export default function Ingredients() {
   const { user, getIdToken } = useAuth();
@@ -19,7 +20,9 @@ export default function Ingredients() {
           setLoading(false);
           return;
         }
-        const res = await fetch('/user/ingredients', { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch('/user/ingredients', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         if (!res.ok) throw new Error('Failed to fetch');
         const json = await res.json();
         if (mounted) setItems(json.items || []);
@@ -34,19 +37,59 @@ export default function Ingredients() {
   }, [user, getIdToken]);
 
   return (
-    <div className="body">
-      <h1 className="header-title">Ingredients</h1>
-      {!user && <p>Please sign in to view your scanned items.</p>}
-      {loading && <p>Loading...</p>}
-      {error && <p className="text-danger">{error}</p>}
-      {!loading && items && items.length === 0 && <p>No scanned items yet.</p>}
-      {!loading && items && items.length > 0 && (
-        <ul>
-          {items.map((it, i) => (
-            <li key={it.id || i}>{it.title}{it.addedAt ? ` — ${new Date(it.addedAt).toLocaleString()}` : ''}</li>
-          ))}
-        </ul>
-      )}
+    <div className="ingredients-page">
+      <div className="ingredients-container">
+        <div className="ingredients-header">
+          <h1>Scanned Ingredients</h1>
+          <p>View and manage all your scanned grocery items</p>
+        </div>
+
+        {!user && (
+          <div className="ingredients-empty">
+            <p>Please sign in to view your scanned items.</p>
+          </div>
+        )}
+
+        {loading && (
+          <div className="ingredients-loading">
+            <div className="loading-spinner"></div>
+            <p>Loading your ingredients...</p>
+          </div>
+        )}
+
+        {error && (
+          <div className="ingredients-error">
+            <p>Error: {error}</p>
+          </div>
+        )}
+
+        {!loading && items && items.length === 0 && (
+          <div className="ingredients-empty">
+            <div className="empty-icon">📦</div>
+            <h2>No scanned items yet</h2>
+            <p>Start scanning barcodes to see your ingredients here!</p>
+          </div>
+        )}
+
+        {!loading && items && items.length > 0 && (
+          <div className="ingredients-list">
+            {items.map((it, i) => (
+              <div key={it.id || i} className="ingredient-item">
+                <div className="ingredient-content">
+                  <h3 className="ingredient-title">{it.title || 'Unknown Item'}</h3>
+                  {it.addedAt && (
+                    <p className="ingredient-date">
+                      Scanned: {new Date(it.addedAt).toLocaleString()}
+                    </p>
+                  )}
+                  {it.brand && <p className="ingredient-brand">Brand: {it.brand}</p>}
+                  {it.description && <p className="ingredient-description">{it.description}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
