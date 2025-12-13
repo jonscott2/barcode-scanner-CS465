@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   HashRouter as Router,
   Routes,
@@ -70,10 +70,10 @@ function AppLayout() {
               xmlns="http://www.w3.org/2000/svg"
               style={{ marginRight: '0.5rem' }}
             >
-              <rect width="32" height="32" rx="6" fill="#003366" />
-              <path d="M16 8L20 14H12L16 8Z" fill="#FFC72C" />
-              <path d="M8 20L12 26H4L8 20Z" fill="#FFC72C" />
-              <path d="M24 20L28 26H20L24 20Z" fill="#FFC72C" />
+              <rect width="32" height="32" rx="6" fill="var(--food-green)" />
+              <path d="M16 8L20 14H12L16 8Z" fill="var(--food-mint)" />
+              <path d="M8 20L12 26H4L8 20Z" fill="var(--food-mint)" />
+              <path d="M24 20L28 26H20L24 20Z" fill="var(--food-mint)" />
             </svg>
             <span style={{ fontWeight: 700, color: 'white' }}>SNHU Scanner</span>
           </div>
@@ -132,9 +132,51 @@ function ProtectedRoutes() {
 /**
  * Component to protect public routes from logged-in users
  * Redirects logged-in users away from landing/login/signup pages
+ * Also checks for expired sessions (10 minutes of inactivity)
  */
 function PublicRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
+
+  useEffect(() => {
+    // Check for expired session even if Firebase has a user
+    const checkExpiredSession = async () => {
+      const SESSION_TIMESTAMP_KEY = 'barcode-scanner/sessionTimestamp';
+      const LAST_ACTIVITY_KEY = 'barcode-scanner/lastActivity';
+      const INACTIVITY_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+
+      const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
+      const sessionTimestamp = localStorage.getItem(SESSION_TIMESTAMP_KEY);
+
+      // If timestamps exist, check if session expired
+      if (lastActivity && sessionTimestamp) {
+        const lastActivityTime = parseInt(lastActivity, 10);
+        const timeSinceLastActivity = Date.now() - lastActivityTime;
+
+        // If more than 10 minutes of inactivity, clear session
+        if (timeSinceLastActivity > INACTIVITY_TIMEOUT) {
+          console.log('Session expired on public route. Clearing session...');
+          localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+          localStorage.removeItem(LAST_ACTIVITY_KEY);
+          localStorage.removeItem('user');
+          // If user exists, logout will be handled by auth state change
+        }
+      } else if (user) {
+        // If user exists but no session timestamps, clear them (session invalid)
+        localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        localStorage.removeItem('user');
+        try {
+          await logout();
+        } catch (error) {
+          console.error('Error clearing expired session:', error);
+        }
+      }
+    };
+
+    if (!loading) {
+      checkExpiredSession();
+    }
+  }, [user, loading, logout]);
 
   if (loading) {
     return (
@@ -146,7 +188,30 @@ function PublicRoute({ children }) {
     );
   }
 
-  // If user is logged in and tries to access landing/login/signup, redirect to home
+  // Check session expiry before redirecting
+  const SESSION_TIMESTAMP_KEY = 'barcode-scanner/sessionTimestamp';
+  const LAST_ACTIVITY_KEY = 'barcode-scanner/lastActivity';
+  const INACTIVITY_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+
+  const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
+  const sessionTimestamp = localStorage.getItem(SESSION_TIMESTAMP_KEY);
+
+  // If user exists but session has expired, don't redirect (let them see landing page)
+  if (user && lastActivity && sessionTimestamp) {
+    const lastActivityTime = parseInt(lastActivity, 10);
+    const timeSinceLastActivity = Date.now() - lastActivityTime;
+    
+    // If session is still valid, redirect to home
+    if (timeSinceLastActivity <= INACTIVITY_TIMEOUT) {
+      return <Navigate to="/home" replace />;
+    }
+    // Otherwise, session expired - allow access to public routes
+  } else if (user && (!lastActivity || !sessionTimestamp)) {
+    // User exists but no valid session timestamps - treat as logged out
+    return children;
+  }
+
+  // If user is logged in with valid session, redirect to home
   if (user) {
     return <Navigate to="/home" replace />;
   }

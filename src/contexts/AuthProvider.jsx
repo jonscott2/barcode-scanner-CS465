@@ -22,8 +22,10 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const timeoutRef = useRef(null);
   const warningTimeoutRef = useRef(null);
-  const INACTIVITY_TIMEOUT = 20 * 60 * 1000; // 20 minutes in milliseconds
-  const WARNING_TIME = 18 * 60 * 1000; // Show warning 2 minutes before logout (18 minutes)
+  const INACTIVITY_TIMEOUT = 10 * 60 * 1000; // 10 minutes in milliseconds
+  const WARNING_TIME = 8 * 60 * 1000; // Show warning 2 minutes before logout (8 minutes)
+  const SESSION_TIMESTAMP_KEY = 'barcode-scanner/sessionTimestamp';
+  const LAST_ACTIVITY_KEY = 'barcode-scanner/lastActivity';
 
   // Function to show warning notification
   const showWarning = useCallback(() => {
@@ -34,8 +36,8 @@ export function AuthProvider({ children }) {
         position: fixed;
         top: 20px;
         right: 20px;
-        background: linear-gradient(135deg, #FFC72C 0%, #FFB81C 100%);
-        color: #003366;
+        background: linear-gradient(135deg, var(--food-mint) 0%, var(--food-herb) 100%);
+        color: var(--food-green);
         padding: 1.5rem 2rem;
         border-radius: 12px;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
@@ -43,7 +45,7 @@ export function AuthProvider({ children }) {
         font-weight: 700;
         font-size: 1rem;
         max-width: 400px;
-        border: 2px solid #003366;
+        border: 2px solid var(--food-green);
       `;
       notification.setAttribute('data-inactivity-warning', 'true');
       notification.innerHTML = `
@@ -68,7 +70,7 @@ export function AuthProvider({ children }) {
   // Function to handle inactivity logout
   const handleInactivity = useCallback(async () => {
     if (user) {
-      console.log('User inactive for 20 minutes. Auto-logging out...');
+      console.log('User inactive for 10 minutes. Auto-logging out...');
       // Remove warning notification if it exists
       const warningNotifications = document.querySelectorAll('[data-inactivity-warning]');
       warningNotifications.forEach(n => n.remove());
@@ -77,23 +79,25 @@ export function AuthProvider({ children }) {
         await signOut(getAuth());
         setUser(null);
         localStorage.removeItem('user');
+        localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
         // Show logout notification
         const logoutNotification = document.createElement('div');
         logoutNotification.style.cssText = `
           position: fixed;
           top: 20px;
           right: 20px;
-          background: linear-gradient(135deg, #003366 0%, #001f3f 100%);
-          color: #FFC72C;
+          background: linear-gradient(135deg, var(--food-green) 0%, var(--food-green-dark) 100%);
+          color: var(--food-mint);
           padding: 1.5rem 2rem;
           border-radius: 12px;
           box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
           z-index: 10000;
           font-weight: 700;
           font-size: 1rem;
-          border: 2px solid #FFC72C;
+          border: 2px solid var(--food-mint);
         `;
-        logoutNotification.textContent = 'You have been logged out due to inactivity.';
+        logoutNotification.textContent = 'You have been logged out due to 10 minutes of inactivity. Please sign in again.';
         document.body.appendChild(logoutNotification);
         setTimeout(() => {
           if (logoutNotification.parentNode) {
@@ -123,12 +127,19 @@ export function AuthProvider({ children }) {
 
     // Only set timers if user is logged in
     if (user) {
-      // Set warning timer (18 minutes)
+      // Update last activity timestamp
+      const now = Date.now();
+      localStorage.setItem(LAST_ACTIVITY_KEY, now.toString());
+      if (!localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
+        localStorage.setItem(SESSION_TIMESTAMP_KEY, now.toString());
+      }
+
+      // Set warning timer (8 minutes)
       warningTimeoutRef.current = setTimeout(() => {
         showWarning();
       }, WARNING_TIME);
 
-      // Set logout timer (20 minutes)
+      // Set logout timer (10 minutes)
       timeoutRef.current = setTimeout(() => {
         handleInactivity();
       }, INACTIVITY_TIMEOUT);
@@ -180,11 +191,62 @@ export function AuthProvider({ children }) {
     };
   }, [user, resetInactivityTimer]);
 
+  // Function to check if session has expired (10 minutes of inactivity)
+  const checkSessionExpiry = useCallback(async (currentUser) => {
+    if (!currentUser) return null;
+
+    const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
+    const sessionTimestamp = localStorage.getItem(SESSION_TIMESTAMP_KEY);
+    
+    // If no timestamps exist, create them (new session)
+    if (!lastActivity || !sessionTimestamp) {
+      const now = Date.now();
+      localStorage.setItem(LAST_ACTIVITY_KEY, now.toString());
+      localStorage.setItem(SESSION_TIMESTAMP_KEY, now.toString());
+      return currentUser;
+    }
+
+    const lastActivityTime = parseInt(lastActivity, 10);
+    const timeSinceLastActivity = Date.now() - lastActivityTime;
+
+    // If more than 10 minutes of inactivity, force logout
+    if (timeSinceLastActivity > INACTIVITY_TIMEOUT) {
+      console.log('Session expired due to inactivity. Forcing logout...');
+      try {
+        const auth = getAuth();
+        if (auth) {
+          await signOut(auth);
+        }
+        setUser(null);
+        localStorage.removeItem('user');
+        localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        return null;
+      } catch (error) {
+        console.error('Error during session expiry check:', error);
+        return null;
+      }
+    }
+
+    return currentUser;
+  }, [INACTIVITY_TIMEOUT]);
+
   useEffect(() => {
     let mounted = true;
     initAuth()
-      .then(u => {
-        if (mounted) setUser(u || getCurrentUser() || null);
+      .then(async u => {
+        if (mounted) {
+          const user = u || getCurrentUser() || null;
+          // Check if session has expired
+          const validatedUser = await checkSessionExpiry(user);
+          setUser(validatedUser);
+          // Initialize session timestamp if user is valid
+          if (validatedUser && !localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
+            const now = Date.now();
+            localStorage.setItem(SESSION_TIMESTAMP_KEY, now.toString());
+            localStorage.setItem(LAST_ACTIVITY_KEY, now.toString());
+          }
+        }
       })
       .catch(() => {
         if (mounted) setUser(getCurrentUser() || null);
@@ -193,9 +255,24 @@ export function AuthProvider({ children }) {
         if (mounted) setLoading(false);
       });
 
-    const unsub = onAuthStateChange(u => {
-      setUser(u || null);
-      setLoading(false);
+    const unsub = onAuthStateChange(async u => {
+      if (mounted) {
+        // Check session expiry whenever auth state changes
+        const validatedUser = await checkSessionExpiry(u);
+        setUser(validatedUser);
+        setLoading(false);
+        
+        // Initialize session timestamps when user logs in
+        if (validatedUser) {
+          const now = Date.now();
+          if (!localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
+            localStorage.setItem(SESSION_TIMESTAMP_KEY, now.toString());
+          }
+          if (!localStorage.getItem(LAST_ACTIVITY_KEY)) {
+            localStorage.setItem(LAST_ACTIVITY_KEY, now.toString());
+          }
+        }
+      }
     });
     return () => {
       try {
@@ -203,7 +280,7 @@ export function AuthProvider({ children }) {
       } catch (e) {}
       mounted = false;
     };
-  }, []);
+  }, [checkSessionExpiry]);
 
   async function getIdToken() {
     if (!user) return null;
@@ -244,9 +321,11 @@ export function AuthProvider({ children }) {
       // Clear user state
       setUser(null);
 
-      // Clear any stored user data
+      // Clear any stored user data and session timestamps
       localStorage.removeItem('user');
       localStorage.removeItem('scans'); // Also clear scan history
+      localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+      localStorage.removeItem(LAST_ACTIVITY_KEY);
 
       console.log('Logout completed successfully');
 
@@ -257,6 +336,8 @@ export function AuthProvider({ children }) {
       setUser(null);
       localStorage.removeItem('user');
       localStorage.removeItem('scans');
+      localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+      localStorage.removeItem(LAST_ACTIVITY_KEY);
       throw error; // Re-throw so caller can handle it
     }
   }

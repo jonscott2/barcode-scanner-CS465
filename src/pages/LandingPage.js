@@ -18,7 +18,7 @@ export default function LandingPage() {
   const teamMembers = [
     {
       name: 'Samuel Kwibe',
-      role: ' Front End & Back End Developer',
+      role: 'Front End & Back End Developer',
       description: 'API integration & database management',
       email: 'samual.kwibe@snhu.edu',
       image: '../assets/team/samuel-kwibe.jpg'
@@ -59,48 +59,54 @@ export default function LandingPage() {
       title: 'Instant Scanning',
       description:
         "Scan any barcode with your phone's camera. Get product information instantly - no typing, no searching.",
-      color: 'var(--snhu-yellow)',
-      image: 'https://images.unsplash.com/photo-1583451132570-d2912012473f?w=500&h=350&fit=crop'
+      color: 'var(--food-mint)',
+      image: 'https://images.unsplash.com/photo-1583451132570-d2912012473f?w=900&h=900&fit=crop&auto=format',
+      paragraph: 'Point and scan—works instantly in any lighting condition.'
     },
     {
       icon: '📦',
       title: 'Product Details',
       description:
         "See product name, brand, description, and images automatically. Know exactly what you're buying.",
-      color: 'var(--snhu-navy)',
-      image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&h=350&fit=crop'
+      color: 'var(--food-green)',
+      image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=900&h=900&fit=crop&auto=format',
+      paragraph: 'Full ingredient lists, nutrition facts, and allergen warnings instantly displayed.'
     },
     {
       icon: '⏰',
       title: 'Expiration Tracking',
       description:
         'Set custom expiration dates and get notified before items expire. Never waste food again.',
-      color: 'var(--snhu-yellow)',
-      image: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=500&h=350&fit=crop'
+      color: 'var(--food-mint)',
+      image: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=900&h=900&fit=crop&auto=format',
+      paragraph: 'Get notified before items expire and reduce food waste automatically.'
     },
     {
       icon: '☁️',
       title: 'Cloud Sync',
       description:
         'All your scans are saved securely in the cloud. Access them from any device, anytime.',
-      color: 'var(--snhu-navy)',
-      image: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=500&h=350&fit=crop'
+      color: 'var(--food-green)',
+      image: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=900&h=900&fit=crop&auto=format',
+      paragraph: 'Sync across all devices with secure cloud storage and encryption.'
     },
     {
       icon: '📚',
       title: 'Smart History',
       description:
         'Search and filter your scan history. Find items quickly with powerful search tools.',
-      color: 'var(--snhu-yellow)',
-      image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=500&h=350&fit=crop'
+      color: 'var(--food-mint)',
+      image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=900&h=900&fit=crop&auto=format',
+      paragraph: 'Search by name, brand, or date to find any item in your history instantly.'
     },
     {
       icon: '🍳',
       title: 'Recipe Discovery',
       description:
         'Get recipe suggestions based on your scanned ingredients. Cook amazing meals with what you have.',
-      color: 'var(--snhu-navy)',
-      image: 'https://images.unsplash.com/photo-1512621776951-a5739dfd84f4?w=500&h=350&fit=crop'
+      color: 'var(--food-green)',
+      image: 'https://images.unsplash.com/photo-1512621776951-a5739dfd84f4?w=900&h=900&fit=crop&auto=format',
+      paragraph: 'Discover recipes based on your scanned ingredients and reduce waste.'
     }
   ];
 
@@ -109,25 +115,29 @@ export default function LandingPage() {
       number: '10K+',
       label: 'Products Scanned',
       icon: '📊',
-      image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=400&h=300&fit=crop'
+      image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&h=800&fit=crop&auto=format',
+      description: 'Thousands of products from your favorite brands at your fingertips.'
     },
     {
       number: '500+',
       label: 'Active Users',
       icon: '👥',
-      image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=300&fit=crop'
+      image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&h=800&fit=crop&auto=format',
+      description: 'Join a community reducing food waste every day.'
     },
     {
       number: '99%',
       label: 'Accuracy Rate',
       icon: '✅',
-      image: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=400&h=300&fit=crop'
+      image: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=800&h=800&fit=crop&auto=format',
+      description: 'Industry-leading scanning accuracy you can trust.'
     },
     {
       number: '24/7',
       label: 'Available',
       icon: '🌐',
-      image: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=400&h=300&fit=crop'
+      image: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=800&h=800&fit=crop&auto=format',
+      description: 'Access your inventory anywhere, anytime.'
     }
   ];
 
@@ -137,21 +147,24 @@ export default function LandingPage() {
       title: 'Scan Barcode',
       description: 'Point your camera at any product barcode or upload an image',
       icon: '📸',
-      image: 'https://images.unsplash.com/photo-1583451132570-d2912012473f?w=500&h=400&fit=crop'
+      image: 'https://images.unsplash.com/photo-1583451132570-d2912012473f?w=900&h=900&fit=crop&auto=format',
+      paragraph: 'Point and scan—works instantly in any lighting.'
     },
     {
       step: '2',
       title: 'Get Info',
       description: 'Instantly receive product details, ingredients, and nutritional information',
       icon: '📋',
-      image: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=500&h=400&fit=crop'
+      image: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=900&h=900&fit=crop&auto=format',
+      paragraph: 'Complete product details including ingredients and nutrition in seconds.'
     },
     {
       step: '3',
       title: 'Track & Manage',
       description: 'Set expiration dates, view history, and discover recipes',
       icon: '📱',
-      image: 'https://images.unsplash.com/photo-1512621776951-a5739dfd84f4?w=500&h=400&fit=crop'
+      image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=900&h=900&fit=crop&auto=format',
+      paragraph: 'Organize items, track expiration dates, and discover recipes from your inventory.'
     }
   ];
 
@@ -161,15 +174,16 @@ export default function LandingPage() {
 
   const handleImageError = (e, member) => {
     e.target.onerror = null; // Prevent infinite loop
+    // Use green-themed avatar fallback
     const roleColor = member.role.split(' ')[0].toLowerCase();
     const colorMap = {
-      back: '4f46e5',
-      design: '10b981',
-      front: 'f59e0b',
-      website: '8b5cf6'
+      back: '2d5016', // food-green
+      design: '7ed957', // food-mint
+      front: '52b788', // food-herb
+      website: '4a702c' // food-green-light
     };
 
-    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&size=200&background=${colorMap[roleColor] || '4f46e5'}&color=fff&bold=true&font-size=0.5`;
+    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&size=200&background=${colorMap[roleColor] || '2d5016'}&color=fff&bold=true&font-size=0.5`;
     handleImageLoad(member.name);
   };
 
@@ -260,6 +274,7 @@ export default function LandingPage() {
                 <div className="stat-icon">{stat.icon}</div>
                 <div className="stat-number">{stat.number}</div>
                 <div className="stat-label">{stat.label}</div>
+                <p className="stat-description">{stat.description}</p>
               </div>
             ))}
           </div>
@@ -275,12 +290,22 @@ export default function LandingPage() {
             {howItWorks.map((step, index) => (
               <div key={index} className="step-card">
                 <div className="step-image-wrapper">
-                  <img src={step.image} alt={step.title} className="step-image" />
+                  <img 
+                    src={step.image} 
+                    alt={step.title} 
+                    className="step-image"
+                    loading="lazy"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = `https://via.placeholder.com/500x400/2d5016/ffffff?text=${encodeURIComponent(step.title)}`;
+                    }}
+                  />
                 </div>
                 <div className="step-number">{step.step}</div>
                 <div className="step-icon">{step.icon}</div>
                 <h3 className="step-title">{step.title}</h3>
                 <p className="step-description">{step.description}</p>
+                <p className="step-paragraph">{step.paragraph}</p>
               </div>
             ))}
           </div>
@@ -321,6 +346,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="feature-title">{feature.title}</h3>
                 <p className="feature-description">{feature.description}</p>
+                <p className="feature-paragraph">{feature.paragraph}</p>
               </div>
             ))}
           </div>
@@ -435,10 +461,10 @@ export default function LandingPage() {
             <div className="footer-section">
               <h3 className="footer-heading">Quick Links</h3>
               <nav className="footer-nav">
-                <a href="#home">Home</a>
-                <a href="#features">Features</a>
-                <a href="#how-it-works">How It Works</a>
-                <a href="#team">Team</a>
+                <a href="#home" onClick={e => handleNavClick(e, '#home')}>Home</a>
+                <a href="#features" onClick={e => handleNavClick(e, '#features')}>Features</a>
+                <a href="#how-it-works" onClick={e => handleNavClick(e, '#how-it-works')}>How It Works</a>
+                <a href="#team" onClick={e => handleNavClick(e, '#team')}>Team</a>
                 <Link to="/about">About</Link>
                 <Link to="/contact">Contact</Link>
                 <Link to="/faq">FAQ</Link>

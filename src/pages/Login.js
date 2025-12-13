@@ -15,8 +15,24 @@ export default function Login() {
   useEffect(() => {
     // Wait until Firebase auth check is complete before redirecting
     if (!authLoading && user) {
+      // Navigate to dashboard immediately when user is detected
       navigate('/home', { replace: true });
     }
+  }, [user, authLoading, navigate]);
+  
+  // Also listen for auth state changes more aggressively
+  useEffect(() => {
+    const checkAuthAndRedirect = () => {
+      if (user && !authLoading) {
+        navigate('/home', { replace: true });
+      }
+    };
+    
+    // Check immediately and also after a short delay to catch auth state updates
+    checkAuthAndRedirect();
+    const timer = setTimeout(checkAuthAndRedirect, 500);
+    
+    return () => clearTimeout(timer);
   }, [user, authLoading, navigate]);
 
   const handleSubmit = async e => {
@@ -26,12 +42,18 @@ export default function Login() {
 
     try {
       const result = await signInWithEmail(email, password);
-      if (result.error) {
+      if (result && result.error) {
         setError(result.error.message || 'Failed to sign in. Please try again.');
+        setLoading(false);
+      } else if (result && !result.error) {
+        // Successful login - navigate to dashboard immediately
+        // The useEffect will also handle redirect when user state updates
+        setTimeout(() => {
+          navigate('/home', { replace: true });
+        }, 300);
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
-    } finally {
       setLoading(false);
     }
   };
@@ -40,10 +62,19 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await signInAnonymous();
+      const result = await signInAnonymous();
+      if (result && !result.error) {
+        // Successful guest login - navigate to dashboard immediately
+        // The useEffect will also handle redirect when user state updates
+        setTimeout(() => {
+          navigate('/home', { replace: true });
+        }, 300);
+      } else {
+        setError('Failed to continue as guest. Please try again.');
+        setLoading(false);
+      }
     } catch (err) {
       setError('Failed to continue as guest. Please try again.');
-    } finally {
       setLoading(false);
     }
   };

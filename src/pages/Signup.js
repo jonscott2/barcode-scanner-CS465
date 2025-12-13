@@ -35,12 +35,18 @@ export default function Signup() {
 
     try {
       const result = await createAccount(email, password, displayName);
-      if (result.error) {
+      if (result && result.error) {
         setError(result.error.message || 'Failed to create account. Please try again.');
+        setLoading(false);
+      } else if (result && !result.error) {
+        // Successful account creation - navigate to dashboard immediately
+        // The useEffect will also handle redirect when user state updates
+        setTimeout(() => {
+          navigate('/home', { replace: true });
+        }, 300);
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
-    } finally {
       setLoading(false);
     }
   };
@@ -49,10 +55,19 @@ export default function Signup() {
     setError('');
     setLoading(true);
     try {
-      await signInAnonymous();
+      const result = await signInAnonymous();
+      if (result && !result.error) {
+        // Successful guest login - navigate to dashboard immediately
+        // The useEffect will also handle redirect when user state updates
+        setTimeout(() => {
+          navigate('/home', { replace: true });
+        }, 300);
+      } else {
+        setError('Failed to continue as guest. Please try again.');
+        setLoading(false);
+      }
     } catch (err) {
       setError('Failed to continue as guest. Please try again.');
-    } finally {
       setLoading(false);
     }
   };
