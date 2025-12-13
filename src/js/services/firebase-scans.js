@@ -47,6 +47,25 @@ export async function initFirestore() {
 }
 
 /**
+ * Creates a standardized scan object for local storage.
+ * @param {object} scanData - The raw scan data.
+ * @param {object} extras - Extra properties like firestoreId or pendingSync.
+ * @returns {object} A consistent scan object.
+ */
+function createLocalScanObject(scanData, extras = {}) {
+  return {
+    id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Stable local ID
+    value: scanData.value,
+    addedAt: Date.now(),
+    title: scanData.title || '',
+    brand: scanData.brand || '',
+    description: scanData.description || '',
+    format: scanData.format || '',
+    metadata: scanData.metadata || {},
+    ...extras
+  };
+}
+/**
  * Save a scan to Firestore
  * @param {object} scanData - The scan data to save
  * @param {string} scanData.value - The barcode value
@@ -59,100 +78,58 @@ export async function initFirestore() {
  */
 export async function saveScan(scanData) {
   const userId = getUserId();
+  let localScan;
+  let firestoreError = null;
+  let scanId = null;
 
-  // If Firebase is not configured or user is not authenticated, save to local storage only
-  if (!isFirebaseConfigured() || !db || !userId) {
-    log.info('Saving scan locally (Firebase not available or user not authenticated)');
-    
+  const isOnline = isFirebaseConfigured() && db && userId;
+
+  if (isOnline) {
+    // Online: try to save to Firestore first
     try {
-      // Save to local storage using existing storage service
-      const [, history = []] = await getHistory();
-      const newScan = {
+      const firestoreScan = {
+        userId,
         value: scanData.value,
-        addedAt: Date.now(),
-        expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
-        notified: false,
-        preNotified: false,
+        format: scanData.format || '',
         title: scanData.title || '',
         brand: scanData.brand || '',
         description: scanData.description || '',
-        format: scanData.format || '',
-        metadata: scanData.metadata || {}
+        metadata: scanData.metadata || {},
+        scannedAt: Timestamp.now(),
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
       };
-      
-      await setHistory([...history, newScan]);
-      return { error: null, scanId: null };
+
+      const docRef = await addDoc(collection(db, SCANS_COLLECTION), firestoreScan);
+      log.info('Scan saved to Firestore:', docRef.id);
+      scanId = docRef.id;
+      // Create local copy with the new Firestore ID
+      localScan = createLocalScanObject(scanData, { firestoreId: docRef.id });
     } catch (error) {
-      log.error('Error saving scan locally:', error);
-      return { error, scanId: null };
+      log.error('Error saving scan to Firestore, falling back to local:', error);
+      firestoreError = error;
+      // Mark for sync since Firestore failed
+      localScan = createLocalScanObject(scanData, { pendingSync: true });
     }
+  } else {
+    // Offline or not authenticated
+    log.info('Saving scan locally (Firebase not available or user not authenticated)');
+    // Mark for sync only if a user is logged in but offline
+    const shouldSync = !!userId;
+    localScan = createLocalScanObject(scanData, { pendingSync: shouldSync });
   }
 
+  // Always save the determined localScan object to local storage
   try {
-    const scan = {
-      userId,
-      value: scanData.value,
-      format: scanData.format || '',
-      title: scanData.title || '',
-      brand: scanData.brand || '',
-      description: scanData.description || '',
-      metadata: scanData.metadata || {},
-      scannedAt: Timestamp.now(),
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now()
-    };
-
-    const docRef = await addDoc(collection(db, SCANS_COLLECTION), scan);
-    log.info('Scan saved to Firestore:', docRef.id);
-
-    // Also save to local storage as a backup
-    try {
-      const [, history = []] = await getHistory();
-        const localScan = {
-          value: scanData.value,
-          addedAt: Date.now(),
-          expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
-          notified: false,
-          preNotified: false,
-          title: scanData.title || '',
-          brand: scanData.brand || '',
-          description: scanData.description || '',
-          format: scanData.format || '',
-          firestoreId: docRef.id
-        };
-      await setHistory([...history, localScan]);
-    } catch (localError) {
-      log.warn('Error saving to local storage:', localError);
-      // Non-fatal, continue
-    }
-
-    return { error: null, scanId: docRef.id };
-  } catch (error) {
-    log.error('Error saving scan to Firestore:', error);
-
-    // Fallback: save to local storage
-    try {
-      const [, history = []] = await getHistory();
-      const localScan = {
-        value: scanData.value,
-        addedAt: Date.now(),
-        expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
-        notified: false,
-        preNotified: false,
-        title: scanData.title || '',
-        brand: scanData.brand || '',
-        description: scanData.description || '',
-        format: scanData.format || '',
-        pendingSync: true // Mark for sync when online
-      };
-      await setHistory([...history, localScan]);
-      log.info('Scan saved locally, will sync when online');
-    } catch (localError) {
-      log.error('Error saving to local storage:', localError);
-    }
-
-    return { error, scanId: null };
+    const [, history = []] = await getHistory();
+    await setHistory([...history, localScan]);
+  } catch (localError) {
+    log.error('CRITICAL: Failed to save scan to local storage:', localError);
+    // This is a more critical error, so we return it.
+    return { error: localError, scanId: null };
   }
+
+  return { error: firestoreError, scanId };
 }
 
 /**
@@ -166,7 +143,7 @@ export async function getUserScans(maxResults = 100) {
   // If Firebase is not configured or user is not authenticated, return local storage
   if (!isFirebaseConfigured() || !db || !userId) {
     log.info('Getting scans from local storage (Firebase not available or user not authenticated)');
-    
+
     try {
       const [error, history = []] = await getHistory();
       if (error) {
@@ -175,8 +152,8 @@ export async function getUserScans(maxResults = 100) {
 
       // Transform local storage format to match Firestore format
       const scans = history.map(item => ({
-        id: item.firestoreId || null,
-        value: typeof item === 'string' ? item : item.value,
+        id: item.firestoreId || item.id, // Use firestoreId or the stable local ID
+        value: item.value,
         title: item.title || '',
         brand: item.brand || '',
         description: item.description || '',
@@ -186,9 +163,9 @@ export async function getUserScans(maxResults = 100) {
       }));
 
       return { error: null, scans };
-    } catch (error) {
-      log.error('Error getting scans from local storage:', error);
-      return { error, scans: [] };
+    } catch (localError) {
+      log.error('Error getting scans from local storage:', localError);
+      return { error: localError, scans: [] };
     }
   }
 
@@ -221,8 +198,8 @@ export async function getUserScans(maxResults = 100) {
       const [localError, history = []] = await getHistory();
       if (!localError) {
         const scans = history.map(item => ({
-          id: item.firestoreId || null,
-          value: typeof item === 'string' ? item : item.value,
+          id: item.firestoreId || item.id, // Use firestoreId or the stable local ID
+          value: item.value,
           title: item.title || '',
           brand: item.brand || '',
           description: item.description || '',
@@ -274,7 +251,7 @@ export async function deleteAllUserScans() {
 
   if (!isFirebaseConfigured() || !db || !userId) {
     log.info('Deleting all scans from local storage only');
-    
+
     try {
       await setHistory([]);
       return { error: null, deletedCount: 0 };
@@ -284,10 +261,7 @@ export async function deleteAllUserScans() {
   }
 
   try {
-    const scansQuery = query(
-      collection(db, SCANS_COLLECTION),
-      where('userId', '==', userId)
-    );
+    const scansQuery = query(collection(db, SCANS_COLLECTION), where('userId', '==', userId));
 
     const querySnapshot = await getDocs(scansQuery);
     const batch = writeBatch(db);
@@ -324,7 +298,10 @@ export async function syncPendingScans() {
   const userId = getUserId();
 
   if (!isFirebaseConfigured() || !db || !userId) {
-    return { error: new Error('Firebase not configured or user not authenticated'), syncedCount: 0 };
+    return {
+      error: new Error('Firebase not configured or user not authenticated'),
+      syncedCount: 0
+    };
   }
 
   try {
@@ -333,51 +310,62 @@ export async function syncPendingScans() {
       return { error, syncedCount: 0 };
     }
 
-    const pendingScans = history.filter(item => item.pendingSync === true);
-    
+    const pendingScans = history.filter(item => item.pendingSync === true && !item.firestoreId);
+
     if (pendingScans.length === 0) {
+      log.info('No pending scans to sync.');
       return { error: null, syncedCount: 0 };
     }
 
-    let syncedCount = 0;
-    const updatedHistory = [...history];
+    const batch = writeBatch(db);
+    const scansToUpdateLocally = [];
 
-    for (const scan of pendingScans) {
-      try {
-        const result = await saveScan({
-          value: scan.value,
-          title: scan.title,
-          brand: scan.brand,
-          description: scan.description,
-          format: scan.format,
-          metadata: scan.metadata
-        });
+    for (const localScan of pendingScans) {
+      const newScanRef = doc(collection(db, SCANS_COLLECTION));
+      const firestoreScan = {
+        userId,
+        value: localScan.value,
+        format: localScan.format || '',
+        title: localScan.title || '',
+        brand: localScan.brand || '',
+        description: localScan.description || '',
+        metadata: localScan.metadata || {},
+        // Use the original scan time if available, otherwise now.
+        scannedAt: localScan.addedAt
+          ? Timestamp.fromDate(new Date(localScan.addedAt))
+          : Timestamp.now(),
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      };
+      batch.set(newScanRef, firestoreScan);
 
-        if (!result.error && result.scanId) {
-          // Update local scan with Firestore ID and remove pendingSync flag
-          const index = updatedHistory.findIndex(h => h === scan);
-          if (index !== -1) {
-            updatedHistory[index] = {
-              ...updatedHistory[index],
-              firestoreId: result.scanId,
-              pendingSync: false
-            };
-          }
-          syncedCount++;
-        }
-      } catch (syncError) {
-        log.error('Error syncing individual scan:', syncError);
-      }
+      // Keep track of the original local scan and the new firestoreId
+      scansToUpdateLocally.push({ localScan, firestoreId: newScanRef.id });
     }
 
-    // Update local storage with synced data
-    await setHistory(updatedHistory);
-    log.info(`Synced ${syncedCount} pending scans to Firestore`);
+    await batch.commit();
+    log.info(`Successfully committed batch of ${scansToUpdateLocally.length} scans to Firestore.`);
 
-    return { error: null, syncedCount };
+    // Now, update the local history
+    const updatedHistory = history.map(histItem => {
+      const updateInfo = scansToUpdateLocally.find(u => u.localScan === histItem);
+      if (updateInfo) {
+        // This was a pending scan that just got synced. Update it.
+        return {
+          ...histItem,
+          pendingSync: false, // or just remove the property
+          firestoreId: updateInfo.firestoreId
+        };
+      }
+      return histItem; // Return other items unchanged
+    });
+
+    await setHistory(updatedHistory);
+    log.info(`Synced ${scansToUpdateLocally.length} pending scans and updated local storage.`);
+
+    return { error: null, syncedCount: scansToUpdateLocally.length };
   } catch (error) {
     log.error('Error syncing pending scans:', error);
     return { error, syncedCount: 0 };
   }
 }
-

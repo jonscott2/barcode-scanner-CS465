@@ -38,22 +38,48 @@ export default function Login() {
   const handleSubmit = async e => {
     e.preventDefault();
     setError('');
+    
+    // Validate inputs
+    if (!email.trim()) {
+      setError('Please enter your email address.');
+      return;
+    }
+    
+    if (!password.trim()) {
+      setError('Please enter your password.');
+      return;
+    }
+    
     setLoading(true);
 
     try {
-      const result = await signInWithEmail(email, password);
-      if (result && result.error) {
-        setError(result.error.message || 'Failed to sign in. Please try again.');
+      const result = await signInWithEmail(email.trim(), password);
+      console.log('Login result:', result); // Debug log
+      
+      if (result) {
+        if (result.error) {
+          setError(result.error.message || 'Failed to sign in. Please try again.');
+          setLoading(false);
+        } else if (result.user) {
+          // Successful login - navigate to dashboard immediately
+          console.log('Login successful, redirecting...');
+          setTimeout(() => {
+            navigate('/home', { replace: true });
+          }, 300);
+          // Don't set loading to false here since we're navigating
+        } else {
+          // No error but no user either
+          setError('Login failed. Please check your credentials and try again.');
+          setLoading(false);
+        }
+      } else {
+        // Fallback if result is undefined/null
+        setError('An unexpected error occurred. Please try again.');
         setLoading(false);
-      } else if (result && !result.error) {
-        // Successful login - navigate to dashboard immediately
-        // The useEffect will also handle redirect when user state updates
-        setTimeout(() => {
-          navigate('/home', { replace: true });
-        }, 300);
       }
     } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
+      console.error('Login error:', err);
+      setError(err.message || 'An unexpected error occurred. Please try again.');
       setLoading(false);
     }
   };
@@ -70,22 +96,26 @@ export default function Login() {
           navigate('/home', { replace: true });
         }, 300);
       } else {
-        setError('Failed to continue as guest. Please try again.');
+        const errorMsg = result?.error?.message || 'Failed to continue as guest. Please try again.';
+        setError(errorMsg);
         setLoading(false);
       }
     } catch (err) {
-      setError('Failed to continue as guest. Please try again.');
+      console.error('Guest login error:', err);
+      setError(err.message || 'Failed to continue as guest. Please try again.');
       setLoading(false);
     }
   };
 
   const handleGoogleLogin = () => {
-    // Placeholder for Google login
+    // Placeholder for Google login - show user-friendly message
+    setError('Google login is coming soon! Please use email/password or continue as guest.');
     console.log('Google login clicked');
   };
 
   const handleGitHubLogin = () => {
-    // Placeholder for GitHub login
+    // Placeholder for GitHub login - show user-friendly message
+    setError('GitHub login is coming soon! Please use email/password or continue as guest.');
     console.log('GitHub login clicked');
   };
 
@@ -100,17 +130,21 @@ export default function Login() {
               <p>Sign in to continue tracking your groceries</p>
             </div>
 
-            <form onSubmit={handleSubmit} className="auth-form">
+            <form onSubmit={handleSubmit} className="auth-form" noValidate>
               <div className="form-group">
                 <label htmlFor="email">Email</label>
                 <input
                   type="email"
                   id="email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={e => {
+                    setEmail(e.target.value);
+                    if (error) setError(''); // Clear error when user types
+                  }}
                   required
                   autoComplete="email"
                   placeholder="Enter your email"
+                  disabled={loading}
                 />
               </div>
 
@@ -120,16 +154,24 @@ export default function Login() {
                   type="password"
                   id="password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={e => {
+                    setPassword(e.target.value);
+                    if (error) setError(''); // Clear error when user types
+                  }}
                   required
                   autoComplete="current-password"
                   placeholder="Enter your password"
+                  disabled={loading}
                 />
               </div>
 
               {error && <div className="error-message">{error}</div>}
 
-              <button type="submit" className="btn btn-primary" disabled={loading}>
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                disabled={loading}
+              >
                 {loading ? 'Signing in...' : 'Sign In'}
               </button>
             </form>

@@ -309,13 +309,22 @@ export function AuthProvider({ children }) {
       const warningNotifications = document.querySelectorAll('[data-inactivity-warning]');
       warningNotifications.forEach(n => n.remove());
 
-      // Sign out from Firebase
-      const auth = getAuth();
-      if (auth) {
-        await signOut(auth);
-        console.log('Firebase signOut successful');
-      } else {
-        console.warn('Firebase auth not initialized');
+      // Sign out from Firebase (if initialized)
+      try {
+        const auth = getAuth();
+        if (auth) {
+          await signOut(auth);
+          console.log('Firebase signOut successful');
+        } else {
+          console.log('Firebase auth not initialized, using local logout only');
+        }
+      } catch (firebaseError) {
+        // Firebase might not be initialized - that's OK for local-only mode
+        if (firebaseError.code === 'app/no-app') {
+          console.log('Firebase not initialized, using local logout only');
+        } else {
+          console.warn('Firebase signOut error (non-critical):', firebaseError.message);
+        }
       }
 
       // Clear user state
@@ -338,7 +347,7 @@ export function AuthProvider({ children }) {
       localStorage.removeItem('scans');
       localStorage.removeItem(SESSION_TIMESTAMP_KEY);
       localStorage.removeItem(LAST_ACTIVITY_KEY);
-      throw error; // Re-throw so caller can handle it
+      // Don't throw error - logout should always succeed for local state
     }
   }
 

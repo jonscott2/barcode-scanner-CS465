@@ -26,6 +26,17 @@ export default function Signup() {
     e.preventDefault();
     setError('');
 
+    // Validate inputs
+    if (!email.trim()) {
+      setError('Please enter your email address.');
+      return;
+    }
+    
+    if (!password.trim()) {
+      setError('Please enter a password.');
+      return;
+    }
+
     if (password.length < 6) {
       setError('Password must be at least 6 characters long.');
       return;
@@ -34,7 +45,7 @@ export default function Signup() {
     setLoading(true);
 
     try {
-      const result = await createAccount(email, password, displayName);
+      const result = await createAccount(email.trim(), password, displayName.trim());
       if (result && result.error) {
         setError(result.error.message || 'Failed to create account. Please try again.');
         setLoading(false);
@@ -44,9 +55,14 @@ export default function Signup() {
         setTimeout(() => {
           navigate('/home', { replace: true });
         }, 300);
+      } else {
+        // Fallback if result is undefined/null
+        setError('An unexpected error occurred. Please try again.');
+        setLoading(false);
       }
     } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
+      console.error('Signup error:', err);
+      setError(err.message || 'An unexpected error occurred. Please try again.');
       setLoading(false);
     }
   };
@@ -100,9 +116,13 @@ export default function Signup() {
                   type="text"
                   id="displayName"
                   value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
+                  onChange={(e) => {
+                    setDisplayName(e.target.value);
+                    if (error) setError('');
+                  }}
                   autoComplete="name"
                   placeholder="Enter your name"
+                  disabled={loading}
                 />
               </div>
 
@@ -112,10 +132,14 @@ export default function Signup() {
                   type="email"
                   id="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (error) setError('');
+                  }}
                   required
                   autoComplete="email"
                   placeholder="Enter your email"
+                  disabled={loading}
                 />
               </div>
 
@@ -125,17 +149,21 @@ export default function Signup() {
                   type="password"
                   id="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError('');
+                  }}
                   required
                   autoComplete="new-password"
                   minLength="6"
+                  disabled={loading}
                   placeholder="At least 6 characters"
                 />
               </div>
 
               {error && <div className="error-message">{error}</div>}
 
-              <button type="submit" className="btn btn-primary" disabled={loading}>
+              <button type="submit" className="btn btn-primary" disabled={loading || !email.trim() || !password.trim()}>
                 {loading ? 'Creating Account...' : 'Create Account'}
               </button>
             </form>

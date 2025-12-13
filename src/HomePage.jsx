@@ -4,12 +4,28 @@ import { useAuth } from './contexts/AuthProvider.jsx';
 import { getUserScans } from './js/services/firebase-scans.js';
 import './css/main.css';
 
+// Format time ago - moved outside component to prevent re-creation on every render
+const formatTimeAgo = date => {
+  const now = new Date();
+  const scanDate = date instanceof Date ? date : new Date(date);
+  const diffMs = now - scanDate;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  return scanDate.toLocaleDateString();
+};
+
 // Import custom web components (no longer needed for modals, but keeping for potential future use)
 
 export default function HomePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
+
   // Statistics and recent scans state
   const [stats, setStats] = useState({
     totalScans: 0,
@@ -35,14 +51,14 @@ export default function HomePage() {
       setLoadingStats(true);
     }
     setError(null);
-    
+
     try {
       const { error: fetchError, scans } = await getUserScans(50);
       if (fetchError) {
         setError('Failed to load statistics');
         return;
       }
-      
+
       if (scans) {
         const now = new Date();
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -50,28 +66,36 @@ export default function HomePage() {
         weekStart.setDate(now.getDate() - now.getDay());
         weekStart.setHours(0, 0, 0, 0);
 
-        const totalScans = scans.length;
-        const todayScans = scans.filter(s => {
-          const scanDate = s.scannedAt instanceof Date ? s.scannedAt : new Date(s.scannedAt);
-          return scanDate >= todayStart;
-        }).length;
-        const thisWeekScans = scans.filter(s => {
-          const scanDate = s.scannedAt instanceof Date ? s.scannedAt : new Date(s.scannedAt);
-          return scanDate >= weekStart;
-        }).length;
-        const productsFound = scans.filter(s => s.title || s.brand).length;
+        let todayScans = 0;
+        let thisWeekScans = 0;
+        let productsFound = 0;
+
+        // Iterate once for performance instead of multiple filters
+        for (const scan of scans) {
+          const scanDate =
+            scan.scannedAt instanceof Date ? scan.scannedAt : new Date(scan.scannedAt);
+          if (scanDate >= todayStart) {
+            todayScans++;
+          }
+          if (scanDate >= weekStart) {
+            thisWeekScans++;
+          }
+          if (scan.title || scan.brand) {
+            productsFound++;
+          }
+        }
 
         setStats({
-          totalScans,
+          totalScans: scans.length,
           todayScans,
           thisWeekScans,
           productsFound
         });
 
         // Get recent scans (last 5)
-        const recent = scans.slice(0, 5);
-        setRecentScans(recent);
-        setFilteredScans(recent);
+        const recentScans = scans.slice(0, 5);
+        setRecentScans(recentScans);
+        setFilteredScans(recentScans);
       }
     } catch (err) {
       console.error('Error loading stats:', err);
@@ -108,7 +132,7 @@ export default function HomePage() {
 
   // Handle actions menu
   useEffect(() => {
-    const handleClickOutside = (event) => {
+    const handleClickOutside = event => {
       if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target)) {
         setShowActionsMenu(false);
       }
@@ -121,24 +145,14 @@ export default function HomePage() {
   }, [showActionsMenu]);
 
   // Handle action button clicks
-  const handleAuthClick = () => {
+  const handleMenuNavigation = path => {
     setShowActionsMenu(false);
-    navigate('/account');
-  };
-
-  const handleHistoryClick = () => {
-    setShowActionsMenu(false);
-    navigate('/history');
-  };
-
-  const handleSettingsClick = () => {
-    setShowActionsMenu(false);
-    navigate('/settings');
+    navigate(path);
   };
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (event) => {
+    const handleKeyDown = event => {
       // Only trigger if not typing in an input
       if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
         return;
@@ -171,38 +185,21 @@ export default function HomePage() {
       const query = searchQuery.toLowerCase();
       const title = (scan.title || '').toLowerCase();
       const brand = (scan.brand || '').toLowerCase();
-      const barcode = (scan.barcodeValue || '').toLowerCase();
+      const barcode = (scan.value || '').toLowerCase();
       return title.includes(query) || brand.includes(query) || barcode.includes(query);
     });
     setFilteredScans(filtered);
   }, [searchQuery, recentScans]);
 
   // Calculate additional stats
-  const averageScansPerDay = stats.totalScans > 0 && stats.thisWeekScans > 0 
-    ? (stats.thisWeekScans / 7).toFixed(1) 
-    : '0';
-
-  // Format time ago
-  const formatTimeAgo = (date) => {
-    const now = new Date();
-    const scanDate = date instanceof Date ? date : new Date(date);
-    const diffMs = now - scanDate;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-    return scanDate.toLocaleDateString();
-  };
+  const averageScansPerDay =
+    stats.totalScans > 0 && stats.thisWeekScans > 0 ? (stats.thisWeekScans / 7).toFixed(1) : '0';
 
   return (
     <div className="dashboard-page">
       {/* Actions Menu Button - Top Right */}
       <div className="dashboard-actions-container" ref={actionsMenuRef}>
-        <button 
+        <button
           className="actions-menu-btn"
           onClick={() => setShowActionsMenu(!showActionsMenu)}
           aria-label="Actions menu"
@@ -211,17 +208,28 @@ export default function HomePage() {
             <path d="M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z" />
           </svg>
         </button>
-        
+
         {showActionsMenu && (
           <div className="actions-menu-dropdown">
-            <button id="homeAuthBtn" className="action-menu-item" onClick={handleAuthClick}>
+            <button
+              id="homeAuthBtn"
+              className="action-menu-item"
+              onClick={() => handleMenuNavigation('/account')}
+            >
               <svg width="1.25em" height="1.25em" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" />
-                <path fillRule="evenodd" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z" />
+                <path
+                  fillRule="evenodd"
+                  d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z"
+                />
               </svg>
               <span>Account</span>
             </button>
-            <button id="homeHistoryBtn" className="action-menu-item" onClick={handleHistoryClick}>
+            <button
+              id="homeHistoryBtn"
+              className="action-menu-item"
+              onClick={() => handleMenuNavigation('/history')}
+            >
               <svg width="1.25em" height="1.25em" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z" />
                 <path d="M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z" />
@@ -229,9 +237,16 @@ export default function HomePage() {
               </svg>
               <span>History</span>
             </button>
-            <button id="homeSettingsBtn" className="action-menu-item" onClick={handleSettingsClick}>
+            <button
+              id="homeSettingsBtn"
+              className="action-menu-item"
+              onClick={() => handleMenuNavigation('/settings')}
+            >
               <svg width="1.25em" height="1.25em" fill="currentColor" viewBox="0 0 16 16">
-                <path fillRule="evenodd" d="M11.5 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M9.05 3a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0V3zM4.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M2.05 8a2.5 2.5 0 0 1 4.9 0H16v1H6.95a2.5 2.5 0 0 1-4.9 0H0V8zm9.45 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m-2.45 1a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0v-1z" />
+                <path
+                  fillRule="evenodd"
+                  d="M11.5 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M9.05 3a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0V3zM4.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M2.05 8a2.5 2.5 0 0 1 4.9 0H16v1H6.95a2.5 2.5 0 0 1-4.9 0H0V8zm9.45 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m-2.45 1a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0v-1z"
+                />
               </svg>
               <span>Settings</span>
             </button>
@@ -271,16 +286,16 @@ export default function HomePage() {
         <div className="stats-dashboard-header">
           <h2>Your Statistics</h2>
           <div className="stats-header-actions">
-            <button 
-              className="refresh-stats-btn" 
+            <button
+              className="refresh-stats-btn"
               onClick={() => loadStats(true)}
               disabled={refreshing || loadingStats}
               aria-label="Refresh statistics"
             >
-              <svg 
-                width="1.25em" 
-                height="1.25em" 
-                fill="currentColor" 
+              <svg
+                width="1.25em"
+                height="1.25em"
+                fill="currentColor"
                 viewBox="0 0 16 16"
                 className={refreshing ? 'spinning' : ''}
               >
@@ -289,19 +304,22 @@ export default function HomePage() {
               </svg>
               {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
-            <button 
+            <button
               className="toggle-stats-btn"
               onClick={() => setStatsExpanded(!statsExpanded)}
               aria-label={statsExpanded ? 'Collapse statistics' : 'Expand statistics'}
             >
-              <svg 
-                width="1.25em" 
-                height="1.25em" 
-                fill="currentColor" 
+              <svg
+                width="1.25em"
+                height="1.25em"
+                fill="currentColor"
                 viewBox="0 0 16 16"
                 className={statsExpanded ? 'rotated' : ''}
               >
-                <path fillRule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z" />
+                <path
+                  fillRule="evenodd"
+                  d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"
+                />
               </svg>
             </button>
           </div>
@@ -387,18 +405,28 @@ export default function HomePage() {
             </svg>
             Scan Now
           </Link>
-          <Link to="/ingredients" className="quick-action-btn">
+          <button
+            className="quick-action-btn"
+            disabled
+            title="Coming soon"
+            style={{ cursor: 'not-allowed', opacity: 0.6 }}
+          >
             <svg width="1.5em" height="1.5em" fill="currentColor" viewBox="0 0 16 16">
               <path d="M2.5.5A.5.5 0 0 1 3 0h10a.5.5 0 0 1 .5.5c0 .538-.012 1.05-.034 1.536a3 3 0 1 1-1.133 5.89c-.79 1.865-1.878 2.777-2.833 3.011v2.173l1.425.356c.194.048.377.135.537.255L13.3 15.1a.5.5 0 0 1-.3.9H3a.5.5 0 0 1-.3-.9l1.838-1.379c.16-.12.343-.207.537-.255L6.5 13.11v-2.173c-.955-.234-2.043-1.146-2.833-3.012a3 3 0 1 1-1.132-5.89A33.076 33.076 0 0 1 2.5.5m.099 2.54a2 2 0 0 0 .72 3.935c-.333-1.05-.588-2.346-.72-3.935zm10.083 3.935a2 2 0 0 0 .72-3.935c-.133 1.59-.388 2.885-.72 3.935" />
             </svg>
             Ingredients
-          </Link>
-          <Link to="/recipes" className="quick-action-btn">
+          </button>
+          <button
+            className="quick-action-btn"
+            disabled
+            title="Coming soon"
+            style={{ cursor: 'not-allowed', opacity: 0.6 }}
+          >
             <svg width="1.5em" height="1.5em" fill="currentColor" viewBox="0 0 16 16">
               <path d="M8 4a.5.5 0 0 1 .5.5V6a.5.5 0 0 1-1 0V4.5A.5.5 0 0 1 8 4zM3.732 5.732a.5.5 0 0 1 .707 0l.915.914a.5.5 0 1 1-.708.708l-.914-.915a.5.5 0 0 1 0-.707zM2 10a.5.5 0 0 1 .5-.5h1.586a.5.5 0 0 1 0 1H2.5A.5.5 0 0 1 2 10zm9.5 0a.5.5 0 0 1 .5-.5h1.5a.5.5 0 0 1 0 1H12a.5.5 0 0 1-.5-.5zm-1.646 1.646a.5.5 0 0 1 .708 0l.914.915a.5.5 0 0 1-.708.708l-.914-.915a.5.5 0 0 1 0-.707zM8 12a4 4 0 0 0-4 4 .5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5 4 4 0 0 0-4-4z" />
             </svg>
             Recipes
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -417,7 +445,10 @@ export default function HomePage() {
             <div className="insight-icon">🎯</div>
             <div className="insight-content">
               <div className="insight-value">
-                {stats.totalScans > 0 ? Math.round((stats.productsFound / stats.totalScans) * 100) : 0}%
+                {stats.totalScans > 0
+                  ? Math.round((stats.productsFound / stats.totalScans) * 100)
+                  : 0}
+                %
               </div>
               <div className="insight-label">Success rate</div>
             </div>
@@ -425,7 +456,9 @@ export default function HomePage() {
           <div className="insight-card">
             <div className="insight-icon">🔥</div>
             <div className="insight-content">
-              <div className="insight-value">{stats.todayScans > 0 ? 'Active' : 'Start scanning!'}</div>
+              <div className="insight-value">
+                {stats.todayScans > 0 ? 'Active' : 'Start scanning!'}
+              </div>
               <div className="insight-label">Today's status</div>
             </div>
           </div>
@@ -438,14 +471,20 @@ export default function HomePage() {
           <h2>Recent Scans</h2>
           <div className="recent-scans-actions">
             <div className="search-box">
-              <svg width="1em" height="1em" fill="currentColor" viewBox="0 0 16 16" style={{ marginRight: '0.5rem' }}>
+              <svg
+                width="1em"
+                height="1em"
+                fill="currentColor"
+                viewBox="0 0 16 16"
+                style={{ marginRight: '0.5rem' }}
+              >
                 <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z" />
               </svg>
               <input
                 type="text"
                 placeholder="Search scans..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={e => setSearchQuery(e.target.value)}
                 className="search-input"
               />
               {searchQuery && (
@@ -461,7 +500,10 @@ export default function HomePage() {
             <Link to="/history" className="view-all-btn">
               View All
               <svg width="1em" height="1em" fill="currentColor" viewBox="0 0 16 16">
-                <path fillRule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z" />
+                <path
+                  fillRule="evenodd"
+                  d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z"
+                />
               </svg>
             </Link>
           </div>
@@ -507,7 +549,9 @@ export default function HomePage() {
                   </svg>
                 </div>
                 <div className="recent-scan-content">
-                  <div className="recent-scan-title">{scan.title || scan.barcodeValue || 'Unknown Product'}</div>
+                  <div className="recent-scan-title">
+                    {scan.title || scan.value || 'Unknown Product'}
+                  </div>
                   <div className="recent-scan-meta">
                     {scan.brand && <span className="recent-scan-brand">{scan.brand}</span>}
                     <span className="recent-scan-time">{formatTimeAgo(scan.scannedAt)}</span>
@@ -518,7 +562,6 @@ export default function HomePage() {
           </div>
         )}
       </div>
-
     </div>
   );
 }

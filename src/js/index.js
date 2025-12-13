@@ -38,8 +38,18 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
       // Initialize auth and automatically sign in anonymously if no user
       const user = await initAuth();
       if (!user) {
-        log.info('No user signed in, signing in anonymously...');
-        await signInAnonymous();
+        log.info('No user signed in, attempting to sign in anonymously...');
+        try {
+          await signInAnonymous();
+        } catch (error) {
+          // Anonymous auth might be disabled in Firebase console
+          // This is OK - app works fine in local-only mode
+          if (error.code === 'auth/admin-restricted-operation') {
+            log.info('Anonymous authentication is disabled. App will work in local-only mode.');
+          } else {
+            log.warn('Could not sign in anonymously:', error.message || error);
+          }
+        }
       }
 
       // Sync any pending scans from offline mode
@@ -74,9 +84,9 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
   const bsSettingsEl = document.querySelector('bs-settings');
   const bsHistoryEl = document.querySelector('bs-history');
   const cameraPanel = document.getElementById('cameraPanel');
-  const cameraResultsEl = cameraPanel.querySelector('.results');
+  const cameraResultsEl = cameraPanel?.querySelector('.results');
   const filePanel = document.getElementById('filePanel');
-  const fileResultsEl = filePanel.querySelector('.results');
+  const fileResultsEl = filePanel?.querySelector('.results');
   const scanInstructionsEl = document.getElementById('scanInstructions');
   const scanBtn = document.getElementById('scanBtn');
   const dropzoneEl = document.getElementById('dropzone');
@@ -92,6 +102,13 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
   const settingsDialog = document.getElementById('settingsDialog');
   const settingsForm = document.getElementById('settingsForm');
   const cameraSelect = document.getElementById('cameraSelect');
+
+  // Check if required elements exist, if not, wait and retry
+  if (!cameraPanel || !filePanel || !tabGroupEl || !videoCaptureEl) {
+    log.warn('Scanner elements not found, scanner module will initialize when elements are available');
+    // Return early - the scanner will be reinitialized when elements are available
+    return;
+  }
   const SCAN_RATE_LIMIT = 1000;
   let scanTimeoutId = null;
   let shouldScan = true;
@@ -124,13 +141,15 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
   const intitialFormats = settings?.formats || supportedBarcodeFormats;
   let barcodeReader = await BarcodeReader.create(intitialFormats);
 
-  videoCaptureEl.addEventListener('video-capture:video-play', handleVideoCapturePlay, {
-    once: true
-  });
+  if (videoCaptureEl) {
+    videoCaptureEl.addEventListener('video-capture:video-play', handleVideoCapturePlay, {
+      once: true
+    });
 
-  videoCaptureEl.addEventListener('video-capture:error', handleVideoCaptureError, {
-    once: true
-  });
+    videoCaptureEl.addEventListener('video-capture:error', handleVideoCaptureError, {
+      once: true
+    });
+  }
 
   VideoCapture.defineCustomElement();
 
@@ -178,6 +197,10 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
   }
 
   async function handleFetchedItemInfo(barcodeValue, panelEl, barcodeFormat = '') {
+    if (!panelEl) {
+      log.warn('Panel element not available for displaying item info');
+      return;
+    }
     try {
       const info = await fetchItemInfo(barcodeValue);
       if (info) {
@@ -288,10 +311,14 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
         throw new Error('No barcode detected');
       }
 
-      createResult(cameraResultsEl, barcodeValue);
+      if (cameraResultsEl) {
+        createResult(cameraResultsEl, barcodeValue);
+      }
 
       // Attempt to fetch item info for 12-14 digit numeric barcodes
-      handleFetchedItemInfo(barcodeValue, cameraPanel, barcodeFormat);
+      if (cameraPanel) {
+        handleFetchedItemInfo(barcodeValue, cameraPanel, barcodeFormat);
+      }
 
       if (settings?.addToHistory) {
         try {
@@ -424,10 +451,14 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
             throw new Error('No barcode detected');
           }
 
-          createResult(fileResultsEl, barcodeValue);
+          if (fileResultsEl) {
+            createResult(fileResultsEl, barcodeValue);
+          }
 
           // Try to fetch item info for file-scanned barcodes as well
-          handleFetchedItemInfo(barcodeValue, filePanel, barcodeFormat);
+          if (filePanel) {
+            handleFetchedItemInfo(barcodeValue, filePanel, barcodeFormat);
+          }
 
           if (settings?.addToHistory) {
             try {
@@ -602,6 +633,10 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
         ? `<strong>Error accessing camera</strong><br>Permission to use webcam was denied or video Autoplay is disabled. Reload the page to give appropriate permissions to webcam.`
         : error.message;
 
+    if (!cameraPanel) {
+      log.error('Camera panel not found, cannot display error');
+      return;
+    }
     cameraPanel.innerHTML = /* html */ `
       <alert-element variant="danger" open>
         <span slot="icon">

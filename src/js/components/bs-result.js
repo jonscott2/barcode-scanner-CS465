@@ -46,6 +46,41 @@ const styles = /* css */ `
     margin-block-start: 0.25rem;
   }
 
+  .result__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .result__meta-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--food-green);
+    line-height: 1.3;
+  }
+
+  .result__meta-brand {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--food-green);
+    opacity: 0.8;
+  }
+
+  .result__meta-description {
+    font-size: 0.9rem;
+    color: var(--text-main);
+    line-height: 1.4;
+    opacity: 0.9;
+  }
+
+  .result__item {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--food-green);
+    word-break: break-word;
+  }
+
   .result__datetime:empty {
     display: none !important;
   }
@@ -218,14 +253,14 @@ class BSResult extends HTMLElement {
       if (title) {
         const t = document.createElement('div');
         t.className = 'result__meta-title';
-        t.textContent = title;
+        t.textContent = `📦 ${title}`;
         metaEl.appendChild(t);
       }
 
       if (brand) {
         const b = document.createElement('div');
         b.className = 'result__meta-brand';
-        b.textContent = `Brand: ${brand}`;
+        b.textContent = `🏷️ Brand: ${brand}`;
         metaEl.appendChild(b);
       }
 
@@ -234,6 +269,18 @@ class BSResult extends HTMLElement {
         d.className = 'result__meta-description';
         d.textContent = description;
         metaEl.appendChild(d);
+      }
+
+      // Always show barcode value even if we have product info
+      if (title || brand) {
+        const barcodeLabel = document.createElement('div');
+        barcodeLabel.className = 'result__meta-barcode';
+        barcodeLabel.style.fontSize = '0.85rem';
+        barcodeLabel.style.color = 'var(--text-muted)';
+        barcodeLabel.style.marginTop = '0.5rem';
+        barcodeLabel.style.fontWeight = '600';
+        barcodeLabel.textContent = `🔢 Barcode: ${value}`;
+        metaEl.appendChild(barcodeLabel);
       }
     }
 
