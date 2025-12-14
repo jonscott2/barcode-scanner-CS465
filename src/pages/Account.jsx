@@ -1,4 +1,3 @@
-import React from 'react';
 import { useAuth } from '../contexts/AuthProvider.jsx';
 import '../css/main.css';
 import './Account.css';

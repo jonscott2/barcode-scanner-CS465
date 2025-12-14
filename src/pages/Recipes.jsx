@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { getUserIngredients, fetchRecipes } from '../js/services/recipe-api.js';
 import './Recipes.css';
 

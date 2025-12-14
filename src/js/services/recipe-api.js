@@ -130,7 +130,7 @@ export async function fetchRecipes(ingredients = [], number = 10) {
  * @returns {Promise<Object|null>}
  */
 export async function getRecipeDetails(recipeId) {
-  if (!recipeId) return null;
+  if (!recipeId) {return null;}
 
   const useProxy = RECIPE_PROXY_URL && RECIPE_PROXY_URL.length > 0;
   const base = useProxy ? RECIPE_PROXY_URL.split('/recipes')[0] : RECIPE_API_BASE;
@@ -140,7 +140,7 @@ export async function getRecipeDetails(recipeId) {
 
   try {
     const res = await fetch(url, { method: 'GET', headers });
-    if (!res.ok) return null;
+    if (!res.ok) {return null;}
     
     return await res.json();
   } catch (err) {

@@ -19,6 +19,14 @@ export default [
           functions: false
         }
       ],
+      'no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_'
+        }
+      ],
       curly: ['warn'],
       eqeqeq: [
         'error',

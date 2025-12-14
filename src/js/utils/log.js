@@ -8,7 +8,7 @@ try {
   } else {
     shouldLog = process.env.NODE_ENV === 'development';
   }
-} catch (e) {
+} catch (_e) {
   shouldLog = process.env.NODE_ENV === 'development';
 }
 

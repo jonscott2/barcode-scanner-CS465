@@ -23,12 +23,17 @@ let authStateListeners = [];
 
 function _notifyAuthListeners(user) {
   authStateListeners.forEach(listener => {
-    try { listener(user); } catch (e) { log.error('Error in auth state listener:', e); }
+    try {
+      listener(user);
+    } catch (e) {
+      log.error('Error in auth state listener:', e);
+    }
   });
 }
 
 /**
  * Initialize authentication and set up auth state listener
+ * Returns a promise that resolves with the initial user state
  */
 export function initAuth() {
   if (!isFirebaseConfigured() || !auth) {
@@ -41,36 +46,33 @@ export function initAuth() {
       } else {
         currentUser = null;
       }
-    } catch (e) {
+    } catch (_e) {
       currentUser = null;
     }
 
     // Notify listeners asynchronously
     setTimeout(() => {
       authStateListeners.forEach(listener => {
-        try { listener(currentUser); } catch (err) { log.error('Error in auth state listener:', err); }
+        try {
+          listener(currentUser);
+        } catch (err) {
+          log.error('Error in auth state listener:', err);
+        }
       });
     }, 0);
 
     return Promise.resolve(currentUser);
   }
 
+  // Return a promise that resolves with the initial auth state
+  // but does NOT unsubscribe - let onAuthStateChange handle persistent listening
   return new Promise((resolve, reject) => {
+    // Use a one-time listener just to get initial state
     const unsubscribe = onAuthStateChanged(
       auth,
       user => {
         currentUser = user;
-        
-        // Notify all listeners
-        authStateListeners.forEach(listener => {
-          try {
-            listener(user);
-          } catch (err) {
-            log.error('Error in auth state listener:', err);
-          }
-        });
-
-        // Resolve the promise on first auth state change
+        // Unsubscribe this one-time listener
         unsubscribe();
         resolve(user);
       },
@@ -92,7 +94,13 @@ export function onAuthStateChange(callback) {
   authStateListeners.push(callback);
 
   // Call immediately with current user (may be null)
-  try { if (currentUser !== undefined) callback(currentUser); } catch (e) { log.error('Auth listener error:', e); }
+  try {
+    if (currentUser !== undefined) {
+      callback(currentUser);
+    }
+  } catch (e) {
+    log.error('Auth listener error:', e);
+  }
 
   if (!isFirebaseConfigured() || !auth) {
     // Return an unsubscribe that removes the listener
@@ -124,7 +132,11 @@ export async function signInAnonymous() {
     try {
       const localUser = { uid: `local-${uuid()}`, isAnonymous: true };
       currentUser = localUser;
-      try { localStorage.setItem(LOCAL_CURRENT_USER_KEY, JSON.stringify(localUser)); } catch (e) {}
+      try {
+        localStorage.setItem(LOCAL_CURRENT_USER_KEY, JSON.stringify(localUser));
+      } catch (_e) {
+        /* ignore */
+      }
       log.info('Signed in anonymously (local):', localUser.uid);
       // Notify listeners about auth change
       _notifyAuthListeners(currentUser);
@@ -147,8 +159,8 @@ export async function signInAnonymous() {
 
 /**
  * Create a new account with email and password
- * @param {string} email 
- * @param {string} password 
+ * @param {string} email
+ * @param {string} password
  * @param {string} displayName - Optional display name
  * @returns {Promise<{error: null|Error, user: object|null}>}
  */
@@ -157,20 +169,33 @@ export async function createAccount(email, password, displayName = '') {
     // Local fallback: create a user in localStorage (for development/testing only)
     try {
       if (!email || !password) {
-        return { error: new Error('Email and password are required for local account'), user: null };
+        return {
+          error: new Error('Email and password are required for local account'),
+          user: null
+        };
       }
 
       const raw = localStorage.getItem(LOCAL_USERS_KEY);
       const users = raw ? JSON.parse(raw) : [];
 
       if (users.find(u => u.email === email)) {
-        return { error: Object.assign(new Error('auth/email-already-in-use'), { code: 'auth/email-already-in-use' }), user: null };
+        return {
+          error: Object.assign(new Error('auth/email-already-in-use'), {
+            code: 'auth/email-already-in-use'
+          }),
+          user: null
+        };
       }
 
       const newUser = { uid: `local-${uuid()}`, email, password, displayName, isAnonymous: false };
       users.push(newUser);
       localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
-      currentUser = { uid: newUser.uid, email: newUser.email, displayName: newUser.displayName, isAnonymous: false };
+      currentUser = {
+        uid: newUser.uid,
+        email: newUser.email,
+        displayName: newUser.displayName,
+        isAnonymous: false
+      };
       localStorage.setItem(LOCAL_CURRENT_USER_KEY, JSON.stringify(currentUser));
       log.info('Local account created:', currentUser.uid);
       // Notify listeners about new account / sign-in
@@ -184,7 +209,7 @@ export async function createAccount(email, password, displayName = '') {
 
   try {
     const result = await createUserWithEmailAndPassword(auth, email, password);
-    
+
     // Set display name if provided
     if (displayName) {
       await updateProfile(result.user, { displayName });
@@ -201,8 +226,8 @@ export async function createAccount(email, password, displayName = '') {
 
 /**
  * Sign in with email and password
- * @param {string} email 
- * @param {string} password 
+ * @param {string} email
+ * @param {string} password
  * @returns {Promise<{error: null|Error, user: object|null}>}
  */
 export async function signInWithEmail(email, password) {
@@ -212,9 +237,17 @@ export async function signInWithEmail(email, password) {
       const users = raw ? JSON.parse(raw) : [];
       const found = users.find(u => u.email === email && u.password === password);
       if (!found) {
-        return { error: Object.assign(new Error('auth/user-not-found'), { code: 'auth/user-not-found' }), user: null };
+        return {
+          error: Object.assign(new Error('auth/user-not-found'), { code: 'auth/user-not-found' }),
+          user: null
+        };
       }
-      currentUser = { uid: found.uid, email: found.email, displayName: found.displayName || '', isAnonymous: false };
+      currentUser = {
+        uid: found.uid,
+        email: found.email,
+        displayName: found.displayName || '',
+        isAnonymous: false
+      };
       localStorage.setItem(LOCAL_CURRENT_USER_KEY, JSON.stringify(currentUser));
       log.info('Signed in locally:', currentUser.uid);
       // Notify listeners about sign-in
@@ -290,6 +323,3 @@ export function isAuthenticated() {
 export function getUserId() {
   return currentUser?.uid || null;
 }
-
-
-

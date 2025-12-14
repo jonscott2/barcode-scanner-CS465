@@ -80,12 +80,18 @@ export const setHistory = async data => {
       if (typeof window !== 'undefined' && window.location) {
         const host = window.location.hostname;
         const protocol = window.location.protocol;
-        const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1' || protocol === 'file:';
-        if (isLocal) return;
+        const isLocal =
+          host === 'localhost' || host === '127.0.0.1' || host === '::1' || protocol === 'file:';
+        if (isLocal) {
+          return;
+        }
       }
 
       // If not local, construct server path on same origin
-      const serverPath = (typeof window !== 'undefined' && window.location) ? `${window.location.origin}/recipes/save-ingredients` : '/recipes/save-ingredients';
+      const serverPath =
+        typeof window !== 'undefined' && window.location
+          ? `${window.location.origin}/recipes/save-ingredients`
+          : '/recipes/save-ingredients';
 
       // Best-effort POST; do not block the main flow. Use fetch without awaiting so errors are not thrown into caller stack.
       const ingredientsToSend = (data || []).map(item =>
@@ -99,7 +105,7 @@ export const setHistory = async data => {
       }).catch(() => {
         // swallow network errors silently — syncing is optional
       });
-    } catch (err) {
+    } catch (_err) {
       // Protect against unexpected errors in the sync helper; do not escalate
     }
   })();

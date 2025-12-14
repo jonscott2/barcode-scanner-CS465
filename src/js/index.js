@@ -22,7 +22,7 @@ import './components/bs-result.js';
 import './components/bs-settings.js';
 import './components/bs-history.js';
 import './components/bs-auth.js';
-import { initAuth, signInAnonymous } from './services/firebase-auth.js';
+import { initAuth } from './services/firebase-auth.js';
 import { initFirestore, saveScan, syncPendingScans } from './services/firebase-scans.js';
 import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-config.js';
 
@@ -30,26 +30,19 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
   // Initialize Firebase Authentication and Firestore
   try {
     // If a runtime config was injected into `window.__FIREBASE_CONFIG__`, initialize Firebase now.
-    try { initFirebaseRuntime(); } catch (e) { /* ignore */ }
+    try {
+      initFirebaseRuntime();
+    } catch (_e) {
+      /* ignore */
+    }
     if (isFirebaseConfigured()) {
       log.info('Initializing Firebase...');
       await initFirestore();
 
-      // Initialize auth and automatically sign in anonymously if no user
+      // Initialize auth
       const user = await initAuth();
       if (!user) {
-        log.info('No user signed in, attempting to sign in anonymously...');
-        try {
-          await signInAnonymous();
-        } catch (error) {
-          // Anonymous auth might be disabled in Firebase console
-          // This is OK - app works fine in local-only mode
-          if (error.code === 'auth/admin-restricted-operation') {
-            log.info('Anonymous authentication is disabled. App will work in local-only mode.');
-          } else {
-            log.warn('Could not sign in anonymously:', error.message || error);
-          }
-        }
+        log.info('No user signed in. App will work in local-only mode for scanning.');
       }
 
       // Sync any pending scans from offline mode
@@ -105,7 +98,9 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
 
   // Check if required elements exist, if not, wait and retry
   if (!cameraPanel || !filePanel || !tabGroupEl || !videoCaptureEl) {
-    log.warn('Scanner elements not found, scanner module will initialize when elements are available');
+    log.warn(
+      'Scanner elements not found, scanner module will initialize when elements are available'
+    );
     // Return early - the scanner will be reinitialized when elements are available
     return;
   }
@@ -160,7 +155,9 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
    * @param {Object} info
    */
   function renderItemDetails(panelEl, info) {
-    if (!panelEl || !info) return;
+    if (!panelEl || !info) {
+      return;
+    }
 
     let itemInfoEl = panelEl.querySelector('#itemInfo');
     if (!itemInfoEl) {
@@ -192,8 +189,12 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
     brand.textContent = info.brand ? `Brand: ${info.brand}` : '';
 
     itemInfoEl.appendChild(title);
-    if (desc.textContent) itemInfoEl.appendChild(desc);
-    if (brand.textContent) itemInfoEl.appendChild(brand);
+    if (desc.textContent) {
+      itemInfoEl.appendChild(desc);
+    }
+    if (brand.textContent) {
+      itemInfoEl.appendChild(brand);
+    }
   }
 
   async function handleFetchedItemInfo(barcodeValue, panelEl, barcodeFormat = '') {
@@ -216,12 +217,18 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
           if (resultsContainer) {
             const resultEl = resultsContainer.querySelector(`bs-result[value="${barcodeValue}"]`);
             if (resultEl) {
-              if (info.title) resultEl.setAttribute('data-title', info.title);
-              if (info.brand) resultEl.setAttribute('data-brand', info.brand);
-              if (info.description) resultEl.setAttribute('data-description', info.description);
+              if (info.title) {
+                resultEl.setAttribute('data-title', info.title);
+              }
+              if (info.brand) {
+                resultEl.setAttribute('data-brand', info.brand);
+              }
+              if (info.description) {
+                resultEl.setAttribute('data-description', info.description);
+              }
             }
           }
-        } catch (e) {
+        } catch (_e) {
           // non-fatal
         }
 
@@ -259,7 +266,7 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
           log.warn('Error saving scan to Firestore:', saveError);
         }
       }
-    } catch (err) {
+    } catch (_err) {
       // ignore lookup errors but still save scan
       try {
         await saveScan({
@@ -335,12 +342,12 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
                 li?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 li?.classList?.add('highlight');
                 setTimeout(() => li?.classList?.remove('highlight'), 2000);
-              } catch (e) {
+              } catch (_e) {
                 // ignore
               }
             }, 50);
           }
-        } catch (e) {
+        } catch (_e) {
           // ignore
         }
       }
@@ -348,9 +355,11 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
       triggerScanEffects();
 
       // Dispatch event to notify React components that a scan was completed
-      window.dispatchEvent(new CustomEvent('bs-scan-complete', {
-        detail: { barcodeValue, barcodeFormat }
-      }));
+      window.dispatchEvent(
+        new CustomEvent('bs-scan-complete', {
+          detail: { barcodeValue, barcodeFormat }
+        })
+      );
 
       if (!settings?.continueScanning) {
         if (scanTimeoutId) {
@@ -473,18 +482,24 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
                     li?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     li?.classList?.add('highlight');
                     setTimeout(() => li?.classList?.remove('highlight'), 2000);
-                  } catch (e) {}
+                  } catch (_e) {
+                    /* ignore */
+                  }
                 }, 50);
               }
-            } catch (e) {}
+            } catch (_e) {
+              /* ignore */
+            }
           }
 
           triggerScanEffects();
-          
+
           // Dispatch event to notify React components that a scan was completed
-          window.dispatchEvent(new CustomEvent('bs-scan-complete', {
-            detail: { barcodeValue, barcodeFormat }
-          }));
+          window.dispatchEvent(
+            new CustomEvent('bs-scan-complete', {
+              detail: { barcodeValue, barcodeFormat }
+            })
+          );
         } catch (err) {
           log.error(err);
 
@@ -606,7 +621,7 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
     // Always show camera select and add change handler
     cameraSelect?.addEventListener('change', handleCameraSelectChange);
     cameraSelect?.removeAttribute('hidden');
-    
+
     // If only one camera, still show the dropdown so user can see which camera is active
     if (videoInputDevices.length === 1) {
       // Select the only camera

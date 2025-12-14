@@ -1,7 +1,6 @@
 import { isFirebaseConfigured, initFirebaseRuntime } from '../services/firebase-config.js';
 import {
   onAuthStateChange,
-  signInAnonymous,
   signInWithEmail,
   createAccount,
   signOut,
@@ -245,19 +244,11 @@ template.innerHTML = /* html */ `
       </div>
 
       <div class="auth-tabs">
-        <button class="auth-tab active" data-tab="anonymous">Quick Start</button>
-        <button class="auth-tab" data-tab="signin">Sign In</button>
+        <button class="auth-tab active" data-tab="signin">Sign In</button>
         <button class="auth-tab" data-tab="signup">Sign Up</button>
       </div>
 
-      <div class="auth-form active" id="anonymousForm">
-        <div class="info-message">
-          Start scanning immediately without creating an account. Your scans will be saved to your device and synced to the cloud.
-        </div>
-        <button type="button" class="btn" id="anonymousBtn">Continue Without Account</button>
-      </div>
-
-      <div class="auth-form" id="signinForm">
+      <div class="auth-form active" id="signinForm">
         <form>
           <div class="form-group">
             <label for="signinEmail">Email</label>
@@ -270,8 +261,6 @@ template.innerHTML = /* html */ `
           <div id="signinError" class="error-message" hidden></div>
           <button type="submit" class="btn" id="signinBtn">Sign In</button>
         </form>
-        <div class="divider">or</div>
-        <button type="button" class="btn btn-secondary" id="signinAnonymousBtn">Continue Without Account</button>
       </div>
 
       <div class="auth-form" id="signupForm">
@@ -291,8 +280,6 @@ template.innerHTML = /* html */ `
           <div id="signupError" class="error-message" hidden></div>
           <button type="submit" class="btn" id="signupBtn">Create Account</button>
         </form>
-        <div class="divider">or</div>
-        <button type="button" class="btn btn-secondary" id="signupAnonymousBtn">Continue Without Account</button>
       </div>
     </div>
   </div>
@@ -327,8 +314,12 @@ class BSAuth extends HTMLElement {
     // Configure Firebase button
     const configureBtn = this.shadowRoot.getElementById('firebaseConfigureBtn');
     const clearBtn = this.shadowRoot.getElementById('firebaseClearBtn');
-    if (configureBtn) configureBtn.addEventListener('click', () => this.#handleConfigureFirebase());
-    if (clearBtn) clearBtn.addEventListener('click', () => this.#handleClearFirebaseInput());
+    if (configureBtn) {
+      configureBtn.addEventListener('click', () => this.#handleConfigureFirebase());
+    }
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => this.#handleClearFirebaseInput());
+    }
 
     // Subscribe to auth state changes
     this.#unsubscribeAuth = onAuthStateChange(user => {
@@ -353,19 +344,20 @@ class BSAuth extends HTMLElement {
       tab.addEventListener('click', () => this.#switchTab(tab.dataset.tab));
     });
 
-    // Anonymous sign in
-    this.shadowRoot.getElementById('anonymousBtn')?.addEventListener('click', () => this.#handleAnonymousSignIn());
-    this.shadowRoot.getElementById('signinAnonymousBtn')?.addEventListener('click', () => this.#handleAnonymousSignIn());
-    this.shadowRoot.getElementById('signupAnonymousBtn')?.addEventListener('click', () => this.#handleAnonymousSignIn());
-
     // Sign in form
-    this.shadowRoot.getElementById('signinForm')?.addEventListener('submit', (e) => this.#handleSignIn(e));
+    this.shadowRoot
+      .getElementById('signinForm')
+      ?.addEventListener('submit', e => this.#handleSignIn(e));
 
     // Sign up form
-    this.shadowRoot.getElementById('signupForm')?.addEventListener('submit', (e) => this.#handleSignUp(e));
+    this.shadowRoot
+      .getElementById('signupForm')
+      ?.addEventListener('submit', e => this.#handleSignUp(e));
 
     // Sign out
-    this.shadowRoot.getElementById('signOutBtn')?.addEventListener('click', () => this.#handleSignOut());
+    this.shadowRoot
+      .getElementById('signOutBtn')
+      ?.addEventListener('click', () => this.#handleSignOut());
   }
 
   #switchTab(tabName) {
@@ -389,21 +381,6 @@ class BSAuth extends HTMLElement {
     });
   }
 
-  async #handleAnonymousSignIn() {
-    const btn = this.shadowRoot.getElementById('anonymousBtn');
-    if (btn) btn.disabled = true;
-
-    const { error, user } = await signInAnonymous();
-
-    if (error) {
-      log.error('Error signing in anonymously:', error);
-      toastify('Error signing in. Please try again.', { variant: 'danger' });
-      if (btn) btn.disabled = false;
-    } else {
-      toastify('Signed in successfully!', { variant: 'success' });
-    }
-  }
-
   async #handleSignIn(event) {
     event.preventDefault();
     const emailInput = this.shadowRoot.getElementById('signinEmail');
@@ -411,10 +388,14 @@ class BSAuth extends HTMLElement {
     const errorEl = this.shadowRoot.getElementById('signinError');
     const btn = this.shadowRoot.getElementById('signinBtn');
 
-    if (btn) btn.disabled = true;
-    if (errorEl) errorEl.hidden = true;
+    if (btn) {
+      btn.disabled = true;
+    }
+    if (errorEl) {
+      errorEl.hidden = true;
+    }
 
-    const { error, user } = await signInWithEmail(emailInput.value, passwordInput.value);
+    const { error, user: _user } = await signInWithEmail(emailInput.value, passwordInput.value);
 
     if (error) {
       log.error('Error signing in:', error);
@@ -422,7 +403,9 @@ class BSAuth extends HTMLElement {
         errorEl.textContent = this.#getErrorMessage(error);
         errorEl.hidden = false;
       }
-      if (btn) btn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+      }
     } else {
       toastify('Signed in successfully!', { variant: 'success' });
       passwordInput.value = '';
@@ -437,10 +420,14 @@ class BSAuth extends HTMLElement {
     const errorEl = this.shadowRoot.getElementById('signupError');
     const btn = this.shadowRoot.getElementById('signupBtn');
 
-    if (btn) btn.disabled = true;
-    if (errorEl) errorEl.hidden = true;
+    if (btn) {
+      btn.disabled = true;
+    }
+    if (errorEl) {
+      errorEl.hidden = true;
+    }
 
-    const { error, user } = await createAccount(
+    const { error, user: _user } = await createAccount(
       emailInput.value,
       passwordInput.value,
       displayNameInput.value
@@ -452,7 +439,9 @@ class BSAuth extends HTMLElement {
         errorEl.textContent = this.#getErrorMessage(error);
         errorEl.hidden = false;
       }
-      if (btn) btn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+      }
     } else {
       toastify('Account created successfully!', { variant: 'success' });
       passwordInput.value = '';
@@ -461,14 +450,18 @@ class BSAuth extends HTMLElement {
 
   async #handleSignOut() {
     const btn = this.shadowRoot.getElementById('signOutBtn');
-    if (btn) btn.disabled = true;
+    if (btn) {
+      btn.disabled = true;
+    }
 
     const { error } = await signOut();
 
     if (error) {
       log.error('Error signing out:', error);
       toastify('Error signing out. Please try again.', { variant: 'danger' });
-      if (btn) btn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+      }
     } else {
       toastify('Signed out successfully', { variant: 'success' });
     }
@@ -476,7 +469,9 @@ class BSAuth extends HTMLElement {
 
   async #handleConfigureFirebase() {
     const inputEl = this.shadowRoot.getElementById('firebaseConfigInput');
-    if (!inputEl) return;
+    if (!inputEl) {
+      return;
+    }
 
     const raw = inputEl.value.trim();
     if (!raw) {
@@ -487,7 +482,7 @@ class BSAuth extends HTMLElement {
     let parsed = null;
     try {
       parsed = JSON.parse(raw);
-    } catch (err) {
+    } catch (_err) {
       toastify('Invalid JSON. Please check and try again.', { variant: 'danger' });
       return;
     }
@@ -502,17 +497,13 @@ class BSAuth extends HTMLElement {
     // Try to initialize Firestore persistence and auth
     try {
       await initFirestore();
-    } catch (e) {
+    } catch (_e) {
       // non-fatal
     }
 
     try {
-      const user = await initAuth();
-      if (!user) {
-        // attempt anonymous sign-in if allowed
-        await signInAnonymous();
-      }
-    } catch (e) {
+      await initAuth();
+    } catch (_e) {
       // ignore
     }
 
@@ -522,7 +513,7 @@ class BSAuth extends HTMLElement {
         this.#unsubscribeAuth();
       }
       this.#unsubscribeAuth = onAuthStateChange(user => this.#handleAuthStateChange(user));
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
 
@@ -533,13 +524,19 @@ class BSAuth extends HTMLElement {
     // Enable sign-in/sign-up buttons now that Firebase is configured
     const signinBtn = this.shadowRoot.getElementById('signinBtn');
     const signupBtn = this.shadowRoot.getElementById('signupBtn');
-    if (signinBtn) signinBtn.disabled = false;
-    if (signupBtn) signupBtn.disabled = false;
+    if (signinBtn) {
+      signinBtn.disabled = false;
+    }
+    if (signupBtn) {
+      signupBtn.disabled = false;
+    }
   }
 
   #handleClearFirebaseInput() {
     const inputEl = this.shadowRoot.getElementById('firebaseConfigInput');
-    if (inputEl) inputEl.value = '';
+    if (inputEl) {
+      inputEl.value = '';
+    }
   }
 
   #handleAuthStateChange(user) {
@@ -565,22 +562,26 @@ class BSAuth extends HTMLElement {
       }
 
       // Emit custom event
-      this.dispatchEvent(new CustomEvent('auth-state-changed', {
-        bubbles: true,
-        composed: true,
-        detail: { user }
-      }));
+      this.dispatchEvent(
+        new CustomEvent('auth-state-changed', {
+          bubbles: true,
+          composed: true,
+          detail: { user }
+        })
+      );
     } else {
       // User is signed out
       this.#authStatusEl?.setAttribute('hidden', '');
       this.#authFormsEl?.removeAttribute('hidden');
 
       // Emit custom event
-      this.dispatchEvent(new CustomEvent('auth-state-changed', {
-        bubbles: true,
-        composed: true,
-        detail: { user: null }
-      }));
+      this.dispatchEvent(
+        new CustomEvent('auth-state-changed', {
+          bubbles: true,
+          composed: true,
+          detail: { user: null }
+        })
+      );
     }
   }
 
@@ -615,6 +616,3 @@ class BSAuth extends HTMLElement {
 BSAuth.defineCustomElement();
 
 export { BSAuth };
-
-
-

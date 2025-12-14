@@ -34,7 +34,7 @@
     "format": "prettier --ignore-unknown --write .",
     "clean": "rimraf dist .parcel-cache",
     "generateSW": "workbox generateSW",
-    "start": "parcel",
+    "start": "PORT=3002 parcel",
     "start:proxy": "node server/proxy.js",
     "build:parcel": "parcel build --dist-dir=dist --public-url=./",
     "build": "npm-run-all clean build:parcel",

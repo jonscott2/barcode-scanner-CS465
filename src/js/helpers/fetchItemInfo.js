@@ -69,16 +69,16 @@ export async function fetchItemInfo(barcode) {
   // 1) GET /product/{id}
   const urlProduct = `${base}/product/${encodeURIComponent(barcode)}`;
   const tryGetProduct = await attempt(urlProduct, { method: 'GET' });
-  if (tryGetProduct.json) return tryGetProduct.json;
+  if (tryGetProduct.json) {return tryGetProduct.json;}
 
   // 2) GET /products/{id}
   const urlProducts = `${base}/products/${encodeURIComponent(barcode)}`;
   const tryGetProducts = await attempt(urlProducts, { method: 'GET' });
-  if (tryGetProducts.json) return tryGetProducts.json;
+  if (tryGetProducts.json) {return tryGetProducts.json;}
 
   // 3) POST /products/{id}
   const tryPostProducts = await attempt(urlProducts, { method: 'POST' });
-  if (tryPostProducts.json) return tryPostProducts.json;
+  if (tryPostProducts.json) {return tryPostProducts.json;}
 
   return null;
 }
@@ -91,7 +91,7 @@ export async function fetchItemInfo(barcode) {
  * @returns {Promise<Object|null>}
  */
 export async function searchItem(query) {
-  if (!query) return null;
+  if (!query) {return null;}
 
   // Prefer proxy when available (same logic as fetchItemInfo)
   const isBrowser = typeof window !== 'undefined' && window?.location;

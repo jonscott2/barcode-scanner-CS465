@@ -1,122 +1,106 @@
-import React, { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthProvider.jsx';
 import './Login.css';
 
 export default function Login() {
-  const { user, signInWithEmail, signInAnonymous, loading: authLoading } = useAuth();
+  const { signInWithEmail } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState({ email: '', password: '', general: '' });
   const [loading, setLoading] = useState(false);
 
-  // Redirect if already logged in, once auth state is determined
-  useEffect(() => {
-    // Wait until Firebase auth check is complete before redirecting
-    if (!authLoading && user) {
-      // Navigate to dashboard immediately when user is detected
-      navigate('/home', { replace: true });
-    }
-  }, [user, authLoading, navigate]);
-  
-  // Also listen for auth state changes more aggressively
-  useEffect(() => {
-    const checkAuthAndRedirect = () => {
-      if (user && !authLoading) {
-        navigate('/home', { replace: true });
-      }
-    };
-    
-    // Check immediately and also after a short delay to catch auth state updates
-    checkAuthAndRedirect();
-    const timer = setTimeout(checkAuthAndRedirect, 500);
-    
-    return () => clearTimeout(timer);
-  }, [user, authLoading, navigate]);
+  // Validate email format
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
 
-  const handleSubmit = async e => {
+  // Handle form submission
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    
+
+    // Clear previous errors
+    setErrors({ email: '', password: '', general: '' });
+
     // Validate inputs
+    let hasError = false;
+    const newErrors = { email: '', password: '', general: '' };
+
     if (!email.trim()) {
-      setError('Please enter your email address.');
+      newErrors.email = 'Email is required';
+      hasError = true;
+    } else if (!validateEmail(email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
+      hasError = true;
+    }
+
+    if (!password) {
+      newErrors.password = 'Password is required';
+      hasError = true;
+    } else if (password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+      hasError = true;
+    }
+
+    if (hasError) {
+      setErrors(newErrors);
       return;
     }
-    
-    if (!password.trim()) {
-      setError('Please enter your password.');
-      return;
-    }
-    
+
     setLoading(true);
 
     try {
       const result = await signInWithEmail(email.trim(), password);
-      console.log('Login result:', result); // Debug log
-      
-      if (result) {
-        if (result.error) {
-          setError(result.error.message || 'Failed to sign in. Please try again.');
-          setLoading(false);
-        } else if (result.user) {
-          // Successful login - navigate to dashboard immediately
-          console.log('Login successful, redirecting...');
-          setTimeout(() => {
-            navigate('/home', { replace: true });
-          }, 300);
-          // Don't set loading to false here since we're navigating
+
+      if (result?.error) {
+        // Handle specific Firebase errors with user-friendly messages
+        const errorCode = result.error.code || '';
+        if (errorCode.includes('user-not-found') || errorCode.includes('wrong-password') || errorCode.includes('invalid-credential')) {
+          setErrors({ ...newErrors, general: 'Invalid email or password. Please try again.' });
+        } else if (errorCode.includes('too-many-requests')) {
+          setErrors({ ...newErrors, general: 'Too many failed attempts. Please try again later.' });
+        } else if (errorCode.includes('network')) {
+          setErrors({ ...newErrors, general: 'Network error. Please check your connection.' });
         } else {
-          // No error but no user either
-          setError('Login failed. Please check your credentials and try again.');
-          setLoading(false);
+          setErrors({ ...newErrors, general: result.error.message || 'Failed to sign in. Please try again.' });
         }
+        setLoading(false);
+      } else if (result?.user) {
+        // Successful login - navigate to app
+        navigate('/app/home', { replace: true });
       } else {
-        // Fallback if result is undefined/null
-        setError('An unexpected error occurred. Please try again.');
+        setErrors({ ...newErrors, general: 'An unexpected error occurred. Please try again.' });
         setLoading(false);
       }
     } catch (err) {
-      console.error('Login error:', err);
-      setError(err.message || 'An unexpected error occurred. Please try again.');
+      setErrors({ ...newErrors, general: 'An unexpected error occurred. Please try again.' });
       setLoading(false);
     }
   };
 
-  const handleGuestLogin = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      const result = await signInAnonymous();
-      if (result && !result.error) {
-        // Successful guest login - navigate to dashboard immediately
-        // The useEffect will also handle redirect when user state updates
-        setTimeout(() => {
-          navigate('/home', { replace: true });
-        }, 300);
-      } else {
-        const errorMsg = result?.error?.message || 'Failed to continue as guest. Please try again.';
-        setError(errorMsg);
-        setLoading(false);
-      }
-    } catch (err) {
-      console.error('Guest login error:', err);
-      setError(err.message || 'Failed to continue as guest. Please try again.');
-      setLoading(false);
-    }
-  };
-
+  // Handle social login placeholders
   const handleGoogleLogin = () => {
-    // Placeholder for Google login - show user-friendly message
-    setError('Google login is coming soon! Please use email/password or continue as guest.');
-    console.log('Google login clicked');
+    setErrors({ email: '', password: '', general: 'Google login coming soon! Please use email for now.' });
   };
 
   const handleGitHubLogin = () => {
-    // Placeholder for GitHub login - show user-friendly message
-    setError('GitHub login is coming soon! Please use email/password or continue as guest.');
-    console.log('GitHub login clicked');
+    setErrors({ email: '', password: '', general: 'GitHub login coming soon! Please use email for now.' });
+  };
+
+  // Clear field-specific error when user starts typing
+  const handleEmailChange = (e) => {
+    setEmail(e.target.value);
+    if (errors.email) setErrors(prev => ({ ...prev, email: '' }));
+    if (errors.general) setErrors(prev => ({ ...prev, general: '' }));
+  };
+
+  const handlePasswordChange = (e) => {
+    setPassword(e.target.value);
+    if (errors.password) setErrors(prev => ({ ...prev, password: '' }));
+    if (errors.general) setErrors(prev => ({ ...prev, general: '' }));
   };
 
   return (
@@ -126,52 +110,66 @@ export default function Login() {
         <div className="auth-form-section">
           <div className="auth-form-container">
             <div className="auth-header">
-              <h1>Welcome Back!</h1>
-              <p>Sign in to continue tracking your groceries</p>
+              <Link to="/" className="auth-back-link">
+                ← Back to Home
+              </Link>
+              <h1>Welcome back</h1>
+              <p>Sign in to continue</p>
             </div>
 
             <form onSubmit={handleSubmit} className="auth-form" noValidate>
-              <div className="form-group">
+              <div className={`form-group ${errors.email ? 'has-error' : ''}`}>
                 <label htmlFor="email">Email</label>
                 <input
                   type="email"
                   id="email"
                   value={email}
-                  onChange={e => {
-                    setEmail(e.target.value);
-                    if (error) setError(''); // Clear error when user types
-                  }}
-                  required
+                  onChange={handleEmailChange}
                   autoComplete="email"
                   placeholder="Enter your email"
                   disabled={loading}
+                  aria-invalid={!!errors.email}
+                  aria-describedby={errors.email ? 'email-error' : undefined}
                 />
+                {errors.email && (
+                  <span id="email-error" className="field-error">{errors.email}</span>
+                )}
               </div>
 
-              <div className="form-group">
+              <div className={`form-group ${errors.password ? 'has-error' : ''}`}>
                 <label htmlFor="password">Password</label>
-                <input
-                  type="password"
-                  id="password"
-                  value={password}
-                  onChange={e => {
-                    setPassword(e.target.value);
-                    if (error) setError(''); // Clear error when user types
-                  }}
-                  required
-                  autoComplete="current-password"
-                  placeholder="Enter your password"
-                  disabled={loading}
-                />
+                <div className="password-input-wrapper">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    id="password"
+                    value={password}
+                    onChange={handlePasswordChange}
+                    autoComplete="current-password"
+                    placeholder="Enter your password"
+                    disabled={loading}
+                    aria-invalid={!!errors.password}
+                    aria-describedby={errors.password ? 'password-error' : undefined}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    disabled={loading}
+                  >
+                    {showPassword ? '👁️' : '👁️‍🗨️'}
+                  </button>
+                </div>
+                {errors.password && (
+                  <span id="password-error" className="field-error">{errors.password}</span>
+                )}
               </div>
 
-              {error && <div className="error-message">{error}</div>}
+              {errors.general && (
+                <div className="error-message" role="alert">{errors.general}</div>
+              )}
 
-              <button 
-                type="submit" 
-                className="btn btn-primary" 
-                disabled={loading}
-              >
+              <button type="submit" className="btn btn-primary" disabled={loading}>
                 {loading ? 'Signing in...' : 'Sign In'}
               </button>
             </form>
@@ -228,14 +226,6 @@ export default function Login() {
                   Sign up
                 </Link>
               </p>
-              <button
-                type="button"
-                className="btn btn-guest"
-                onClick={handleGuestLogin}
-                disabled={loading}
-              >
-                Continue as Guest
-              </button>
             </div>
           </div>
         </div>

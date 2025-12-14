@@ -1,10 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthProvider.jsx';
 import './LandingPage.css';
 
 export default function LandingPage() {
   const [imageLoaded, setImageLoaded] = useState({});
   const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Simulate loading delay for better UX
@@ -60,7 +63,8 @@ export default function LandingPage() {
       description:
         "Scan any barcode with your phone's camera. Get product information instantly - no typing, no searching.",
       color: 'var(--food-mint)',
-      image: 'https://images.unsplash.com/photo-1583451132570-d2912012473f?w=900&h=900&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1583451132570-d2912012473f?w=900&h=900&fit=crop&auto=format',
       paragraph: 'Point and scan—works instantly in any lighting condition.'
     },
     {
@@ -69,8 +73,10 @@ export default function LandingPage() {
       description:
         "See product name, brand, description, and images automatically. Know exactly what you're buying.",
       color: 'var(--food-green)',
-      image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=900&h=900&fit=crop&auto=format',
-      paragraph: 'Full ingredient lists, nutrition facts, and allergen warnings instantly displayed.'
+      image:
+        'https://images.unsplash.com/photo-1542838132-92c53300491e?w=900&h=900&fit=crop&auto=format',
+      paragraph:
+        'Full ingredient lists, nutrition facts, and allergen warnings instantly displayed.'
     },
     {
       icon: '⏰',
@@ -78,7 +84,8 @@ export default function LandingPage() {
       description:
         'Set custom expiration dates and get notified before items expire. Never waste food again.',
       color: 'var(--food-mint)',
-      image: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=900&h=900&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=900&h=900&fit=crop&auto=format',
       paragraph: 'Get notified before items expire and reduce food waste automatically.'
     },
     {
@@ -87,7 +94,8 @@ export default function LandingPage() {
       description:
         'All your scans are saved securely in the cloud. Access them from any device, anytime.',
       color: 'var(--food-green)',
-      image: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=900&h=900&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=900&h=900&fit=crop&auto=format',
       paragraph: 'Sync across all devices with secure cloud storage and encryption.'
     },
     {
@@ -96,7 +104,8 @@ export default function LandingPage() {
       description:
         'Search and filter your scan history. Find items quickly with powerful search tools.',
       color: 'var(--food-mint)',
-      image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=900&h=900&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=900&h=900&fit=crop&auto=format',
       paragraph: 'Search by name, brand, or date to find any item in your history instantly.'
     },
     {
@@ -105,7 +114,8 @@ export default function LandingPage() {
       description:
         'Get recipe suggestions based on your scanned ingredients. Cook amazing meals with what you have.',
       color: 'var(--food-green)',
-      image: 'https://images.unsplash.com/photo-1512621776951-a5739dfd84f4?w=900&h=900&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1512621776951-a5739dfd84f4?w=900&h=900&fit=crop&auto=format',
       paragraph: 'Discover recipes based on your scanned ingredients and reduce waste.'
     }
   ];
@@ -115,28 +125,32 @@ export default function LandingPage() {
       number: '10K+',
       label: 'Products Scanned',
       icon: '📊',
-      image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&h=800&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&h=800&fit=crop&auto=format',
       description: 'Thousands of products from your favorite brands at your fingertips.'
     },
     {
       number: '500+',
       label: 'Active Users',
       icon: '👥',
-      image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&h=800&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&h=800&fit=crop&auto=format',
       description: 'Join a community reducing food waste every day.'
     },
     {
       number: '99%',
       label: 'Accuracy Rate',
       icon: '✅',
-      image: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=800&h=800&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=800&h=800&fit=crop&auto=format',
       description: 'Industry-leading scanning accuracy you can trust.'
     },
     {
       number: '24/7',
       label: 'Available',
       icon: '🌐',
-      image: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=800&h=800&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=800&h=800&fit=crop&auto=format',
       description: 'Access your inventory anywhere, anytime.'
     }
   ];
@@ -147,7 +161,8 @@ export default function LandingPage() {
       title: 'Scan Barcode',
       description: 'Point your camera at any product barcode or upload an image',
       icon: '📸',
-      image: 'https://images.unsplash.com/photo-1583451132570-d2912012473f?w=900&h=900&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1583451132570-d2912012473f?w=900&h=900&fit=crop&auto=format',
       paragraph: 'Point and scan—works instantly in any lighting.'
     },
     {
@@ -155,7 +170,8 @@ export default function LandingPage() {
       title: 'Get Info',
       description: 'Instantly receive product details, ingredients, and nutritional information',
       icon: '📋',
-      image: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=900&h=900&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=900&h=900&fit=crop&auto=format',
       paragraph: 'Complete product details including ingredients and nutrition in seconds.'
     },
     {
@@ -163,7 +179,8 @@ export default function LandingPage() {
       title: 'Track & Manage',
       description: 'Set expiration dates, view history, and discover recipes',
       icon: '📱',
-      image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=900&h=900&fit=crop&auto=format',
+      image:
+        'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=900&h=900&fit=crop&auto=format',
       paragraph: 'Organize items, track expiration dates, and discover recipes from your inventory.'
     }
   ];
@@ -192,6 +209,14 @@ export default function LandingPage() {
     const element = document.querySelector(targetId);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const handleGetStarted = () => {
+    if (user) {
+      navigate('/app/home');
+    } else {
+      navigate('/login');
     }
   };
 
@@ -249,9 +274,9 @@ export default function LandingPage() {
             organized with smart barcode scanning.
           </p>
           <div className="cta-buttons">
-            <Link to="/login" className="cta-button primary">
+            <button onClick={handleGetStarted} className="cta-button primary">
               Get Started
-            </Link>
+            </button>
             <Link to="/signup" className="cta-button secondary">
               Sign Up Free
             </Link>
@@ -290,12 +315,12 @@ export default function LandingPage() {
             {howItWorks.map((step, index) => (
               <div key={index} className="step-card">
                 <div className="step-image-wrapper">
-                  <img 
-                    src={step.image} 
-                    alt={step.title} 
+                  <img
+                    src={step.image}
+                    alt={step.title}
                     className="step-image"
                     loading="lazy"
-                    onError={(e) => {
+                    onError={e => {
                       e.target.onerror = null;
                       e.target.src = `https://via.placeholder.com/500x400/2d5016/ffffff?text=${encodeURIComponent(step.title)}`;
                     }}
@@ -461,10 +486,18 @@ export default function LandingPage() {
             <div className="footer-section">
               <h3 className="footer-heading">Quick Links</h3>
               <nav className="footer-nav">
-                <a href="#home" onClick={e => handleNavClick(e, '#home')}>Home</a>
-                <a href="#features" onClick={e => handleNavClick(e, '#features')}>Features</a>
-                <a href="#how-it-works" onClick={e => handleNavClick(e, '#how-it-works')}>How It Works</a>
-                <a href="#team" onClick={e => handleNavClick(e, '#team')}>Team</a>
+                <a href="#home" onClick={e => handleNavClick(e, '#home')}>
+                  Home
+                </a>
+                <a href="#features" onClick={e => handleNavClick(e, '#features')}>
+                  Features
+                </a>
+                <a href="#how-it-works" onClick={e => handleNavClick(e, '#how-it-works')}>
+                  How It Works
+                </a>
+                <a href="#team" onClick={e => handleNavClick(e, '#team')}>
+                  Team
+                </a>
                 <Link to="/about">About</Link>
                 <Link to="/contact">Contact</Link>
                 <Link to="/faq">FAQ</Link>
@@ -479,9 +512,9 @@ export default function LandingPage() {
                 your products today and discover a new way to manage your kitchen.
               </p>
               <div className="footer-cta">
-                <Link to="/login" className="footer-button">
+                <button onClick={handleGetStarted} className="footer-button">
                   Get Started Now
-                </Link>
+                </button>
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import {
   HashRouter as Router,
   Routes,
@@ -6,7 +6,8 @@ import {
   Link,
   Navigate,
   Outlet,
-  useNavigate
+  useNavigate,
+  useLocation
 } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthProvider.jsx';
 
@@ -32,29 +33,62 @@ import './css/main.css';
 import './js/components/bs-auth.js';
 
 /**
- * A layout component for the main application after a user is authenticated.
- * It includes the shared navigation header.
+ * Loading spinner shown while auth state is being determined
+ */
+function AuthLoadingSpinner() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        background: 'linear-gradient(135deg, var(--food-green) 0%, var(--food-mint) 100%)',
+        color: 'white'
+      }}
+    >
+      <div
+        style={{
+          width: '50px',
+          height: '50px',
+          border: '4px solid rgba(255,255,255,0.3)',
+          borderTopColor: 'white',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}
+      />
+      <div style={{ fontSize: '1rem', marginTop: '1rem', opacity: 0.9 }}>Loading...</div>
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/**
+ * Layout component for authenticated users with navigation
  */
 function AppLayout() {
-  const { logout } = useAuth();
+  const { logout, setLastPage, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleLogout = async e => {
+  // Track current page for "continue where you left off" feature
+  useEffect(() => {
+    if (location.pathname.startsWith('/app/') && user) {
+      setLastPage(location.pathname);
+    }
+  }, [location.pathname, setLastPage, user]);
+
+  const handleLogout = async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
-    try {
-      console.log('Logout button clicked');
-      await logout();
-      console.log('Logout successful, redirecting...');
-      // After logout, redirect user to the landing page for security.
-      // The ProtectedRoutes component will ensure they can't access protected routes
-      navigate('/', { replace: true });
-    } catch (error) {
-      console.error('Logout error:', error);
-      // Even if logout fails, try to redirect
-      navigate('/', { replace: true });
-    }
+    await logout();
+    navigate('/', { replace: true });
   };
 
   return (
@@ -78,10 +112,10 @@ function AppLayout() {
             <span style={{ fontWeight: 700, color: 'white' }}>SNHU Scanner</span>
           </div>
           <div className="nav-links">
-            <Link to="/home">Home</Link>
-            <Link to="/scanner">Scanner</Link>
-            <Link to="/ingredients">Ingredients</Link>
-            <Link to="/recipes">Recipes</Link>
+            <Link to="/app/home">Home</Link>
+            <Link to="/app/scanner">Scanner</Link>
+            <Link to="/app/ingredients">Ingredients</Link>
+            <Link to="/app/recipes">Recipes</Link>
             <button
               type="button"
               onClick={handleLogout}
@@ -94,7 +128,6 @@ function AppLayout() {
         </nav>
       </header>
       <main>
-        {/* The nested route component will be rendered here */}
         <Outlet />
       </main>
     </div>
@@ -102,118 +135,42 @@ function AppLayout() {
 }
 
 /**
- * A component to guard routes that require authentication.
- * It checks the user's auth state and redirects to login if they are not authenticated.
+ * Protected route wrapper - requires authentication
+ * Shows loading spinner while auth state is being determined
+ * Redirects to login if not authenticated
  */
 function ProtectedRoutes() {
-  const { user, loading } = useAuth();
+  const { user, loading, authState } = useAuth();
 
-  if (loading) {
-    // Show a loading indicator while checking auth state
-    return (
-      <div
-        style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}
-      >
-        Loading...
-      </div>
-    );
+  // Show loading while auth state is being determined
+  if (loading || authState === 'loading') {
+    return <AuthLoadingSpinner />;
   }
 
-  if (!user) {
-    // If not logged in, redirect to the login page
-    // This ensures users cannot access protected routes without authentication
+  // Redirect to login if not authenticated
+  if (!user || authState === 'unauthenticated') {
     return <Navigate to="/login" replace />;
   }
 
-  // If logged in, render the main app layout which contains the nested routes
+  // User is authenticated - render the app layout
   return <AppLayout />;
 }
 
 /**
- * Component to protect public routes from logged-in users
- * Redirects logged-in users away from landing/login/signup pages
- * Also checks for expired sessions (10 minutes of inactivity)
+ * Public route wrapper - for landing, login, signup pages
+ * Redirects authenticated users to the app
  */
-function PublicRoute({ children }) {
-  const { user, loading, logout } = useAuth();
+function PublicRoute({ children, redirectAuthenticated = true }) {
+  const { user, loading, authState } = useAuth();
 
-  useEffect(() => {
-    // Check for expired session even if Firebase has a user
-    const checkExpiredSession = async () => {
-      const SESSION_TIMESTAMP_KEY = 'barcode-scanner/sessionTimestamp';
-      const LAST_ACTIVITY_KEY = 'barcode-scanner/lastActivity';
-      const INACTIVITY_TIMEOUT = 10 * 60 * 1000; // 10 minutes
-
-      const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
-      const sessionTimestamp = localStorage.getItem(SESSION_TIMESTAMP_KEY);
-
-      // If timestamps exist, check if session expired
-      if (lastActivity && sessionTimestamp) {
-        const lastActivityTime = parseInt(lastActivity, 10);
-        const timeSinceLastActivity = Date.now() - lastActivityTime;
-
-        // If more than 10 minutes of inactivity, clear session
-        if (timeSinceLastActivity > INACTIVITY_TIMEOUT) {
-          console.log('Session expired on public route. Clearing session...');
-          localStorage.removeItem(SESSION_TIMESTAMP_KEY);
-          localStorage.removeItem(LAST_ACTIVITY_KEY);
-          localStorage.removeItem('user');
-          // If user exists, logout will be handled by auth state change
-        }
-      } else if (user) {
-        // If user exists but no session timestamps, clear them (session invalid)
-        localStorage.removeItem(SESSION_TIMESTAMP_KEY);
-        localStorage.removeItem(LAST_ACTIVITY_KEY);
-        localStorage.removeItem('user');
-        try {
-          await logout();
-        } catch (error) {
-          console.error('Error clearing expired session:', error);
-        }
-      }
-    };
-
-    if (!loading) {
-      checkExpiredSession();
-    }
-  }, [user, loading, logout]);
-
-  if (loading) {
-    return (
-      <div
-        style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}
-      >
-        Loading...
-      </div>
-    );
+  // Show loading while auth state is being determined
+  if (loading || authState === 'loading') {
+    return <AuthLoadingSpinner />;
   }
 
-  // Check session expiry before redirecting
-  const SESSION_TIMESTAMP_KEY = 'barcode-scanner/sessionTimestamp';
-  const LAST_ACTIVITY_KEY = 'barcode-scanner/lastActivity';
-  const INACTIVITY_TIMEOUT = 10 * 60 * 1000; // 10 minutes
-
-  const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
-  const sessionTimestamp = localStorage.getItem(SESSION_TIMESTAMP_KEY);
-
-  // If user exists but session has expired, don't redirect (let them see landing page)
-  if (user && lastActivity && sessionTimestamp) {
-    const lastActivityTime = parseInt(lastActivity, 10);
-    const timeSinceLastActivity = Date.now() - lastActivityTime;
-    
-    // If session is still valid, redirect to home
-    if (timeSinceLastActivity <= INACTIVITY_TIMEOUT) {
-      return <Navigate to="/home" replace />;
-    }
-    // Otherwise, session expired - allow access to public routes
-  } else if (user && (!lastActivity || !sessionTimestamp)) {
-    // User exists but no valid session timestamps - treat as logged out
-    return children;
-  }
-
-  // If user is logged in with valid session, redirect to home
-  if (user) {
-    return <Navigate to="/home" replace />;
+  // Redirect authenticated users to app home
+  if (redirectAuthenticated && user && authState === 'authenticated') {
+    return <Navigate to="/app/home" replace />;
   }
 
   return children;
@@ -249,23 +206,45 @@ export default function App() {
               </PublicRoute>
             }
           />
-          {/* Public routes that don't require login check */}
-          <Route path="/about" element={<About />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/faq" element={<Faq />} />
 
-          {/* Protected Routes */}
+          {/* Info pages - accessible to everyone, no redirect */}
+          <Route
+            path="/about"
+            element={
+              <PublicRoute redirectAuthenticated={false}>
+                <About />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/contact"
+            element={
+              <PublicRoute redirectAuthenticated={false}>
+                <Contact />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/faq"
+            element={
+              <PublicRoute redirectAuthenticated={false}>
+                <Faq />
+              </PublicRoute>
+            }
+          />
+
+          {/* Protected Routes - require authentication */}
           <Route element={<ProtectedRoutes />}>
-            <Route path="/home" element={<HomePage />} />
-            <Route path="/scanner" element={<Scanner />} />
-            <Route path="/ingredients" element={<Ingredients />} />
-            <Route path="/recipes" element={<Recipes />} />
-            <Route path="/account" element={<Account />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/app/home" element={<HomePage />} />
+            <Route path="/app/scanner" element={<Scanner />} />
+            <Route path="/app/ingredients" element={<Ingredients />} />
+            <Route path="/app/recipes" element={<Recipes />} />
+            <Route path="/app/account" element={<Account />} />
+            <Route path="/app/history" element={<History />} />
+            <Route path="/app/settings" element={<Settings />} />
           </Route>
 
-          {/* Fallback: Redirect any unknown paths to the landing page */}
+          {/* Fallback: Redirect unknown paths to landing page */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
