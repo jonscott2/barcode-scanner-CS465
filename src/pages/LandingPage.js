@@ -204,6 +204,30 @@ export default function LandingPage() {
     handleImageLoad(member.name);
   };
 
+  // Generic image error handler to prevent console errors
+  const handleGenericImageError = e => {
+    e.target.onerror = null; // Prevent infinite loop
+    // Hide broken images or use a placeholder
+    e.target.style.display = 'none';
+    // Optionally add a placeholder div
+    if (!e.target.nextElementSibling?.classList.contains('image-placeholder')) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'image-placeholder';
+      placeholder.style.cssText = `
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, var(--food-green) 0%, var(--food-mint) 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 2rem;
+      `;
+      placeholder.textContent = '📷';
+      e.target.parentNode?.appendChild(placeholder);
+    }
+  };
+
   const handleNavClick = (e, targetId) => {
     e.preventDefault();
     const element = document.querySelector(targetId);
@@ -226,7 +250,7 @@ export default function LandingPage() {
       <nav className="landing-nav">
         <div className="landing-nav-container">
           <Link to="/" className="landing-nav-logo">
-            Barcode Scanner
+            Sifts
           </Link>
           <div className="landing-nav-links">
             <a href="#home" onClick={e => handleNavClick(e, '#home')} className="landing-nav-link">
@@ -294,7 +318,13 @@ export default function LandingPage() {
             {stats.map((stat, index) => (
               <div key={index} className="stat-item">
                 <div className="stat-image-wrapper">
-                  <img src={stat.image} alt={stat.label} className="stat-image" />
+                  <img
+                    src={stat.image}
+                    alt={stat.label}
+                    className="stat-image"
+                    onError={handleGenericImageError}
+                    loading="lazy"
+                  />
                 </div>
                 <div className="stat-icon">{stat.icon}</div>
                 <div className="stat-number">{stat.number}</div>
@@ -320,10 +350,7 @@ export default function LandingPage() {
                     alt={step.title}
                     className="step-image"
                     loading="lazy"
-                    onError={e => {
-                      e.target.onerror = null;
-                      e.target.src = `https://via.placeholder.com/500x400/2d5016/ffffff?text=${encodeURIComponent(step.title)}`;
-                    }}
+                    onError={handleGenericImageError}
                   />
                 </div>
                 <div className="step-number">{step.step}</div>
@@ -364,7 +391,13 @@ export default function LandingPage() {
             {features.map((feature, index) => (
               <div key={index} className="feature-card">
                 <div className="feature-image-wrapper">
-                  <img src={feature.image} alt={feature.title} className="feature-image" />
+                  <img
+                    src={feature.image}
+                    alt={feature.title}
+                    className="feature-image"
+                    onError={handleGenericImageError}
+                    loading="lazy"
+                  />
                 </div>
                 <div className="feature-icon" style={{ color: feature.color }}>
                   {feature.icon}
@@ -476,7 +509,7 @@ export default function LandingPage() {
             <div className="footer-section">
               <h3 className="footer-heading">About Our App</h3>
               <p className="footer-text">
-                Barcode Scanner App is a comprehensive solution designed to help you manage your
+                Sifts is a comprehensive solution designed to help you manage your
                 kitchen inventory, reduce food waste, and make informed decisions about the products
                 you consume. Built with modern web technologies and powered by Firebase, we provide
                 a secure, fast, and user-friendly experience.
@@ -520,12 +553,12 @@ export default function LandingPage() {
           </div>
 
           <div className="footer-bottom">
-            <p className="footer-title">Barcode Scanner App - Smart Food & Product Tracking</p>
+            <p className="footer-title">Sifts - Smart Food & Product Tracking</p>
             <p className="footer-subtitle">
               Built with ❤️ for CS465 | Powered by Firebase & Modern Web Technologies
             </p>
             <div className="footer-copyright">
-              © {new Date().getFullYear()} Barcode Scanner App. All rights reserved.
+              © {new Date().getFullYear()} Sifts. All rights reserved.
             </div>
           </div>
         </div>

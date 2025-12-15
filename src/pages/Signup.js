@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthProvider.jsx';
 import './Login.css';
 
 export default function Signup() {
-  const { createAccount } = useAuth();
+  const { user, createAccount, authState } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,6 +13,8 @@ export default function Signup() {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({ email: '', password: '', confirmPassword: '', general: '' });
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
 
   // Validate email format
   const validateEmail = (email) => {
@@ -77,8 +79,12 @@ export default function Signup() {
         }
         setLoading(false);
       } else if (result && !result.error) {
-        // Successful account creation - navigate to app
-        navigate('/app/home', { replace: true });
+        // Successful account creation - show success message
+        console.log('Account created successfully:', result.user);
+        setSuccess(true);
+        setSignupSuccess(true);
+        // Don't navigate here - wait for auth state to update via onAuthStateChange
+        // The useEffect below will handle navigation once authState becomes 'authenticated'
       } else {
         setErrors({ ...newErrors, general: 'An unexpected error occurred. Please try again.' });
         setLoading(false);
@@ -89,6 +95,26 @@ export default function Signup() {
       setLoading(false);
     }
   };
+
+  // Navigate to home when auth state becomes authenticated after successful signup
+  useEffect(() => {
+    if (signupSuccess && (user || authState === 'authenticated')) {
+      console.log('Auth state updated after signup, navigating to home...');
+      // Small delay to ensure state is fully propagated
+      const timer = setTimeout(() => {
+        navigate('/app/home', { replace: true });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [signupSuccess, user, authState, navigate]);
+
+  // Also handle case where user is already authenticated (e.g., from another tab)
+  useEffect(() => {
+    if (!signupSuccess && (user || authState === 'authenticated')) {
+      // User is already logged in, redirect to home
+      navigate('/app/home', { replace: true });
+    }
+  }, [user, authState, navigate, signupSuccess]);
 
   // Handle social login placeholders
   const handleGoogleLogin = () => {
@@ -222,8 +248,14 @@ export default function Signup() {
                 <div className="error-message" role="alert">{errors.general}</div>
               )}
 
-              <button type="submit" className="btn btn-primary" disabled={loading}>
-                {loading ? 'Creating Account...' : 'Create Account'}
+              {success && (
+                <div className="success-message" role="status">
+                  Account created successfully! Redirecting...
+                </div>
+              )}
+
+              <button type="submit" className="btn btn-primary" disabled={loading || success}>
+                {loading ? 'Creating Account...' : success ? 'Success!' : 'Create Account'}
               </button>
             </form>
 

@@ -5,17 +5,19 @@
   },
   "hosting": {
     "public": "dist",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
+      {
+        "source": "/favicon.ico",
+        "destination": "/assets/app-icons/favicon.ico"
+      },
       {
         "source": "**",
         "destination": "/index.html"
       }
     ],
+    "cleanUrls": true,
+    "trailingSlash": false,
     "headers": [
       {
         "source": "**/*.@(js|css)",
@@ -38,4 +40,3 @@
     ]
   }
 }
-

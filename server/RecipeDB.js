@@ -14,19 +14,27 @@ import express from 'express';
 import fetch from 'node-fetch'; // `node-fetch` is a CommonJS module, so you can use `import`
 import fs from 'fs/promises'; // Promises API of `fs`
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 8788;
 const UPC_API_BASE = 'https://api.spoonacular.com';
-const API_KEY2 = process.env.UPC_API_KEY2 || '';
-const INGREDIENTS_FILE = process.env.INGREDIENTS_FILE || path.resolve('ingredients.json');
+// Support both UPC_API_KEY2 and SPOONACULAR_API_KEY for flexibility
+const API_KEY2 = process.env.UPC_API_KEY2 || process.env.SPOONACULAR_API_KEY || '';
+const INGREDIENTS_FILE =
+  process.env.INGREDIENTS_FILE || path.resolve(__dirname, 'ingredients.json');
 // Optional: allow server to verify Firebase ID tokens and read per-user
 // ingredients from Firestore. We initialize firebase-admin lazily so the
 // module is not required unless the environment is configured.
 let admin = null;
 let firestore = null;
 async function initFirebaseAdmin() {
-  if (admin) return;
+  if (admin) {
+    return;
+  }
   try {
     // dynamic import so projects without firebase-admin don't fail at startup
     const mod = await import('firebase-admin');
@@ -99,33 +107,48 @@ app.use((req, res, next) => {
 
 app.get('/recipes/from-file', async (req, res) => {
   try {
+    // First, check if ingredients are provided in query parameters (from frontend)
+    let ingredientsList = null;
+    if (req.query.ingredients) {
+      // Ingredients provided directly in query - use them!
+      const ingredientsParam = String(req.query.ingredients);
+      ingredientsList = ingredientsParam
+        .split(',')
+        .map(ing => ing.trim())
+        .filter(Boolean);
+    }
+
     // Prefer user-specific ingredients when client provides an Authorization
     // Firebase ID token (Bearer) or a dev X-Local-Uid header. Otherwise fall
     // back to reading the configured ingredients file.
     const authHeader = req.headers && (req.headers.authorization || req.headers['authorization']);
     const localUid = req.headers && (req.headers['x-local-uid'] || req.headers['X-Local-Uid']);
 
-    let ingredientsList = null;
-
     // Attempt Firestore per-user read if credentials available
-    if ((process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
       await initFirebaseAdmin();
     }
 
     if (admin && firestore && authHeader) {
       try {
-        const token = String(authHeader).replace(/^Bearer\s+/i, '').trim();
+        const token = String(authHeader)
+          .replace(/^Bearer\s+/i, '')
+          .trim();
         if (token) {
           const decoded = await admin.auth().verifyIdToken(token);
           const uid = decoded && decoded.uid;
           if (uid) {
             const ref = firestore.collection('userIngredients').doc(uid).collection('items');
             const snapshot = await ref.orderBy('addedAt', 'desc').get();
-            const items = snapshot.docs.map(d => {
-              const data = d.data() || {};
-              return (data.title || null);
-            }).filter(Boolean);
-            if (items.length > 0) ingredientsList = items;
+            const items = snapshot.docs
+              .map(d => {
+                const data = d.data() || {};
+                return data.title || null;
+              })
+              .filter(Boolean);
+            if (items.length > 0) {
+              ingredientsList = items;
+            }
           }
         }
       } catch (e) {
@@ -151,44 +174,76 @@ app.get('/recipes/from-file', async (req, res) => {
           .filter(it => it && it.userId === localUid)
           .map(it => it.title)
           .filter(Boolean);
-        if (filtered.length > 0) ingredientsList = filtered;
-      } catch (e) {
+        if (filtered.length > 0) {
+          ingredientsList = filtered;
+        }
+      } catch (_e) {
         // file missing or invalid, will be handled below
       }
     }
 
     // Final fallback: read the ingredients file (existing behavior)
     if (!ingredientsList) {
-      // Read ingredients file (supports array or object with `ingredients` key)
-      const content = await fs.readFile(INGREDIENTS_FILE, 'utf8');
-      let parsed;
       try {
-        parsed = JSON.parse(content);
-      } catch {
-        return res.status(400).json({ error: 'invalid ingredients JSON' });
-      }
-
-      ingredientsList = [];
-      if (Array.isArray(parsed)) {
-        ingredientsList = parsed;
-      } else if (parsed && parsed.ingredients) {
-        if (Array.isArray(parsed.ingredients)) {
-          ingredientsList = parsed.ingredients;
-        } else if (typeof parsed.ingredients === 'string') {
-          ingredientsList = parsed.ingredients
-            .split(',')
-            .map(s => s.trim())
-            .filter(Boolean);
+        // Read ingredients file (supports array or object with `ingredients` key)
+        const content = await fs.readFile(INGREDIENTS_FILE, 'utf8');
+        let parsed;
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          return res.status(400).json({ error: 'invalid ingredients JSON' });
         }
-      } else {
-        return res
-          .status(400)
-          .json({ error: 'ingredients JSON must be an array or have an `ingredients` property' });
-      }
 
-      if (ingredientsList.length === 0) {
-        return res.status(400).json({ error: 'no ingredients found in file' });
+        ingredientsList = [];
+        if (Array.isArray(parsed)) {
+          ingredientsList = parsed;
+        } else if (parsed && parsed.ingredients) {
+          if (Array.isArray(parsed.ingredients)) {
+            ingredientsList = parsed.ingredients;
+          } else if (typeof parsed.ingredients === 'string') {
+            ingredientsList = parsed.ingredients
+              .split(',')
+              .map(s => s.trim())
+              .filter(Boolean);
+          }
+        } else {
+          return res
+            .status(400)
+            .json({ error: 'ingredients JSON must be an array or have an `ingredients` property' });
+        }
+
+        if (ingredientsList.length === 0) {
+          return res.status(400).json({ error: 'no ingredients found in file' });
+        }
+      } catch (fileError) {
+        // File doesn't exist or can't be read - return helpful error
+        if (fileError.code === 'ENOENT') {
+          return res.status(400).json({
+            error: 'no_ingredients_provided',
+            message:
+              'No ingredients provided. Please provide ingredients in query parameter or configure ingredients.json file.'
+          });
+        }
+        throw fileError; // Re-throw other errors
       }
+    }
+
+    // Validate we have ingredients
+    if (!ingredientsList || ingredientsList.length === 0) {
+      return res.status(400).json({
+        error: 'no_ingredients',
+        message: 'No ingredients available. Please provide ingredients in the request.'
+      });
+    }
+
+    // Check if API key is configured
+    if (!API_KEY2) {
+      return res.status(401).json({
+        error: 'api_key_missing',
+        message:
+          'Recipe API key not configured. Please set UPC_API_KEY2 or SPOONACULAR_API_KEY environment variable.',
+        details: 'To get a free API key, visit https://spoonacular.com/food-api'
+      });
     }
 
     const ingredientsParam = encodeURIComponent(ingredientsList.join(','));
@@ -200,10 +255,8 @@ app.get('/recipes/from-file', async (req, res) => {
         : req.query.ignorePantry === 'true' || req.query.ignorePantry === true;
 
     let targetUrl = `${UPC_API_BASE}/recipes/findByIngredients?ingredients=${ingredientsParam}&number=${number}&ranking=${ranking}&ignorePantry=${ignorePantry}`;
-    if (API_KEY2) {
-      // Spoonacular expects `apiKey` query param
-      targetUrl += `&apiKey=${encodeURIComponent(API_KEY2)}`;
-    }
+    // Spoonacular expects `apiKey` query param
+    targetUrl += `&apiKey=${encodeURIComponent(API_KEY2)}`;
 
     // Prepare headers
     const headers = { Accept: 'application/json' };

@@ -36,6 +36,18 @@ export function AuthProvider({ children }) {
   const authInitialized = useRef(false);
   const activityListenersAdded = useRef(false);
 
+  // Debug: Log state changes (only in development)
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('AuthProvider state changed:', {
+        loading,
+        authState,
+        hasUser: !!user,
+        userId: user?.uid
+      });
+    }
+  }, [loading, authState, user]);
+
   // Show inactivity warning
   const showWarning = useCallback(() => {
     // Remove existing warnings first
@@ -165,15 +177,43 @@ export function AuthProvider({ children }) {
     authInitialized.current = true;
 
     let mounted = true;
+    let loadingResolved = false;
+
+    // Safety timeout: ensure loading is always set to false after 5 seconds max
+    const safetyTimeout = setTimeout(() => {
+      if (mounted && !loadingResolved) {
+        console.warn('AuthProvider: Safety timeout - forcing loading to false');
+        loadingResolved = true;
+        setLoading(false);
+        setAuthState('unauthenticated');
+        setUser(null);
+      }
+    }, 5000);
 
     const initializeAuth = async () => {
       try {
-        const initialUser = await initAuth();
+        // Wrap initAuth in a Promise.race with a timeout as an extra safety measure
+        let raceResolved = false;
+        const initPromise = initAuth().catch(err => {
+          console.error('AuthProvider: initAuth promise rejected:', err);
+          return null; // Always resolve to null on error
+        });
 
-        if (!mounted) return;
+        const timeoutPromise = new Promise(resolve => {
+          setTimeout(() => {
+            if (!raceResolved) {
+              console.warn('AuthProvider: initAuth taking too long (4s), resolving with null');
+            }
+            resolve(null);
+          }, 4000); // 4 second timeout (less than safety timeout)
+        });
+
+        const initialUser = await Promise.race([initPromise, timeoutPromise]);
+        raceResolved = true;
 
         // Check for session expiry
         const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
+
         if (lastActivity && initialUser) {
           const timeSinceActivity = Date.now() - parseInt(lastActivity, 10);
           if (timeSinceActivity > INACTIVITY_TIMEOUT) {
@@ -190,40 +230,64 @@ export function AuthProvider({ children }) {
             setUser(null);
             setAuthState('unauthenticated');
             setLoading(false);
+            clearTimeout(safetyTimeout);
             return;
           }
         }
 
+        // Set initial state from initAuth
+        // Note: onAuthStateChange will also fire and may update state again,
+        // but this ensures we have an initial state quickly
         if (initialUser) {
-          setUser(initialUser);
-          setAuthState('authenticated');
           // Initialize session timestamps
           const now = Date.now();
           localStorage.setItem(SESSION_TIMESTAMP_KEY, now.toString());
           localStorage.setItem(LAST_ACTIVITY_KEY, now.toString());
+          // Update all state together
+          setUser(initialUser);
+          setAuthState('authenticated');
+          setLoading(false);
         } else {
+          // No user found initially
           setUser(null);
           setAuthState('unauthenticated');
+          setLoading(false);
         }
+
+        // Note: onAuthStateChange listener below will be the ongoing source of truth
+        // and will update state whenever Firebase auth changes
       } catch (error) {
-        if (mounted) {
-          setUser(null);
-          setAuthState('unauthenticated');
-        }
+        console.error('AuthProvider: Auth initialization error:', error);
+        // Always update state even on error - React handles unmounted components safely
+        setUser(null);
+        setAuthState('unauthenticated');
+        setLoading(false);
       } finally {
-        if (mounted) setLoading(false);
+        loadingResolved = true;
+        clearTimeout(safetyTimeout);
+        // Final safety check - always ensure loading is false
+        setLoading(false);
       }
     };
 
-    initializeAuth();
-
-    // Listen for auth state changes
-    const unsubscribe = onAuthStateChange(async (newUser) => {
-      if (!mounted) return;
+    // Set up the auth state listener FIRST before initializing
+    // This ensures we catch all auth state changes, including the initial state
+    // THIS IS THE SINGLE SOURCE OF TRUTH - all auth state updates come through this
+    const unsubscribe = onAuthStateChange(async newUser => {
+      // Always update state - React handles unmounted components safely
+      // This callback is the authoritative source for auth state
+      if (process.env.NODE_ENV === 'development') {
+        console.log(
+          'AuthProvider: onAuthStateChange fired with user:',
+          newUser ? newUser.uid : 'null'
+        );
+      }
 
       if (newUser) {
+        // User is authenticated
         setUser(newUser);
         setAuthState('authenticated');
+        setLoading(false);
         // Update session timestamps
         const now = Date.now();
         if (!localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
@@ -231,17 +295,21 @@ export function AuthProvider({ children }) {
         }
         localStorage.setItem(LAST_ACTIVITY_KEY, now.toString());
       } else {
+        // User is not authenticated
         setUser(null);
         setAuthState('unauthenticated');
+        setLoading(false);
       }
-      setLoading(false);
     });
+
+    // Now initialize auth - this will trigger the onAuthStateChange callback above
+    initializeAuth();
 
     return () => {
       mounted = false;
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get ID token for API calls
   const getIdToken = useCallback(async () => {
@@ -255,6 +323,24 @@ export function AuthProvider({ children }) {
       return null;
     }
   }, [user]);
+
+  // Wrapped signInWithEmail - Firebase onAuthStateChange will update state automatically
+  // We don't update state here to avoid race conditions - let Firebase be the source of truth
+  const handleSignInWithEmail = useCallback(async (email, password) => {
+    const result = await signInWithEmail(email, password);
+    // Don't update state here - onAuthStateChange will handle it
+    // This ensures Firebase auth is the single source of truth
+    return result;
+  }, []);
+
+  // Wrapped createAccount - Firebase onAuthStateChange will update state automatically
+  // We don't update state here to avoid race conditions - let Firebase be the source of truth
+  const handleCreateAccount = useCallback(async (email, password, displayName) => {
+    const result = await createAccount(email, password, displayName);
+    // Don't update state here - onAuthStateChange will handle it
+    // This ensures Firebase auth is the single source of truth
+    return result;
+  }, []);
 
   // Logout function
   const logout = useCallback(async () => {
@@ -290,9 +376,9 @@ export function AuthProvider({ children }) {
     authState,
     getIdToken,
     logout,
-    signInWithEmail,
-    createAccount,
-    setLastPage: (page) => localStorage.setItem(LAST_PAGE_KEY, page),
+    signInWithEmail: handleSignInWithEmail,
+    createAccount: handleCreateAccount,
+    setLastPage: page => localStorage.setItem(LAST_PAGE_KEY, page),
     getLastPage: () => localStorage.getItem(LAST_PAGE_KEY) || '/app/home'
   };
 

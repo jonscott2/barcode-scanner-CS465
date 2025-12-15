@@ -43,3 +43,21 @@ if (typeof process !== 'undefined' && process?.env?.ITEM_INFO_PROXY_URL) {
 }
 
 export const ITEM_INFO_PROXY_URL = _itemInfoProxyUrl;
+
+// Image Search API Configuration
+// Unsplash API - Free tier: 50 requests/hour, no key required for basic usage
+// Get your key from: https://unsplash.com/developers
+export const UNSPLASH_ACCESS_KEY =
+  (typeof process !== 'undefined' && process?.env?.UNSPLASH_ACCESS_KEY) || '';
+
+// Google Custom Search API - Free tier: 100 requests/day
+// Get your key from: https://developers.google.com/custom-search/v1/overview
+export const GOOGLE_SEARCH_API_KEY =
+  (typeof process !== 'undefined' && process?.env?.GOOGLE_SEARCH_API_KEY) || '';
+export const GOOGLE_SEARCH_ENGINE_ID =
+  (typeof process !== 'undefined' && process?.env?.GOOGLE_SEARCH_ENGINE_ID) || '';
+
+// Pixabay API - Free tier: 5,000 requests/hour
+// Get your key from: https://pixabay.com/api/docs/
+export const PIXABAY_API_KEY =
+  (typeof process !== 'undefined' && process?.env?.PIXABAY_API_KEY) || '';

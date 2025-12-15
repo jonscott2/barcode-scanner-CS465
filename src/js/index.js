@@ -14,6 +14,7 @@ import { triggerScanEffects } from './helpers/triggerScanEffects.js';
 import { resizeScanFrame } from './helpers/resizeScanFrame.js';
 import { BarcodeReader } from './helpers/BarcodeReader.js';
 import { fetchItemInfo } from './helpers/fetchItemInfo.js';
+import { findProductImage } from './services/image-search.js';
 import { toggleTorchButtonStatus } from './helpers/toggleTorchButtonStatus.js';
 import { toastify } from './helpers/toastify.js';
 import { VideoCapture } from './components/video-capture.js';
@@ -176,35 +177,790 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
     // Clear existing content
     itemInfoEl.textContent = '';
 
+    // Add search box at the top
+    const searchContainer = document.createElement('div');
+    searchContainer.className = 'item-info__search-container';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'item-info__search-input';
+    searchInput.placeholder = '🔍 Search product details...';
+    searchInput.setAttribute('aria-label', 'Search product information');
+
+    // Add search icon
+    const searchWrapper = document.createElement('div');
+    searchWrapper.className = 'item-info__search-wrapper';
+    searchWrapper.innerHTML = `
+      <svg class="item-info__search-icon" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+      </svg>
+    `;
+    searchWrapper.appendChild(searchInput);
+
+    // Add clear button
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'item-info__search-clear';
+    clearBtn.innerHTML = '×';
+    clearBtn.setAttribute('aria-label', 'Clear search');
+    clearBtn.style.display = 'none';
+
+    searchWrapper.appendChild(clearBtn);
+    searchContainer.appendChild(searchWrapper);
+    itemInfoEl.appendChild(searchContainer);
+
+    // Create content container for searchable content
+    const contentContainer = document.createElement('div');
+    contentContainer.className = 'item-info__content';
+
+    // Add product image with enhanced image search
+    const imageContainer = document.createElement('div');
+    imageContainer.className = 'item-info__image-container';
+    const img = document.createElement('img');
+    img.className = 'item-info__image';
+    img.alt = info.title || 'Product image';
+    img.loading = 'lazy';
+
+    // Show loading state
+    imageContainer.innerHTML = `
+      <div class="item-info__image-loading">
+        <div class="loading-spinner"></div>
+        <p>Loading product image...</p>
+      </div>
+    `;
+    contentContainer.appendChild(imageContainer);
+
+    // Try to find product image - use API image first, then search if needed
+    (async () => {
+      try {
+        const productName = info.title || info.name || '';
+        const brand = info.brand || '';
+        let imageUrl = null;
+
+        // Check multiple possible image fields from API response
+        const possibleImageFields = [
+          info.image,
+          info.image_url,
+          info.imageUrl,
+          info.images?.[0],
+          info.images?.[1],
+          info.metadata?.image,
+          info.metadata?.image_url,
+          info.metadata?.images?.[0],
+          info.product_image,
+          info.productImage
+        ];
+
+        // Find first valid image URL
+        for (const field of possibleImageFields) {
+          if (field && typeof field === 'string' && field.trim()) {
+            try {
+              const url = new URL(field);
+              if (url.protocol === 'http:' || url.protocol === 'https:') {
+                imageUrl = field;
+                log.info('Using image from API response:', imageUrl);
+                break;
+              }
+            } catch {
+              // Not a valid URL, continue checking other fields
+              continue;
+            }
+          }
+        }
+
+        // If no image from API, search for one
+        if (!imageUrl) {
+          log.info('No image from API, searching for product image...');
+          const imagePromise = findProductImage(productName, brand, '');
+
+          // Set a timeout to show image or placeholder
+          const timeoutId = setTimeout(() => {
+            if (imageContainer.querySelector('.item-info__image-loading')) {
+              const loadingEl = imageContainer.querySelector('.item-info__image-loading p');
+              if (loadingEl) {
+                loadingEl.textContent = 'Searching for product image...';
+              }
+            }
+          }, 2000);
+
+          imageUrl = await imagePromise;
+          clearTimeout(timeoutId);
+        }
+
+        // Always search for image if not found from API
+        if (!imageUrl) {
+          log.info('No image from API, searching for product image...');
+          imageUrl = await findProductImage(productName, brand, '');
+        }
+
+        // Always show image container (even with placeholder)
+        imageContainer.style.display = 'flex';
+
+        if (imageUrl) {
+          img.src = imageUrl;
+          img.alt = productName ? `${productName} product image` : 'Product image';
+          img.loading = 'lazy';
+
+          img.onerror = async () => {
+            log.warn('Image failed to load:', imageUrl);
+            // If image fails, try to find another one
+            try {
+              const fallbackUrl = await findProductImage(productName, brand, '');
+              if (fallbackUrl && fallbackUrl !== imageUrl) {
+                log.info('Trying fallback image:', fallbackUrl);
+                img.src = fallbackUrl;
+                // If fallback also fails, show placeholder
+                img.onerror = () => {
+                  log.warn('Fallback image also failed, showing placeholder');
+                  img.src = `https://via.placeholder.com/600x400/7ED957/1a2e11?text=${encodeURIComponent(productName || 'Product')}`;
+                  img.onerror = null; // Prevent infinite loop
+                };
+              } else {
+                // Use placeholder if no fallback
+                img.src = `https://via.placeholder.com/600x400/7ED957/1a2e11?text=${encodeURIComponent(productName || 'Product')}`;
+                img.onerror = null;
+              }
+            } catch (err) {
+              log.warn('Fallback image search failed:', err);
+              // Show placeholder instead of hiding
+              img.src = `https://via.placeholder.com/600x400/7ED957/1a2e11?text=${encodeURIComponent(productName || 'Product')}`;
+              img.onerror = null;
+            }
+          };
+
+          img.onload = () => {
+            // Replace loading state with image
+            const loadingEl = imageContainer.querySelector('.item-info__image-loading');
+            if (loadingEl) {
+              loadingEl.style.display = 'none';
+            }
+            imageContainer.appendChild(img);
+            img.style.opacity = '0';
+            img.style.width = '100%';
+            img.style.height = 'auto';
+            img.style.maxHeight = '400px';
+            img.style.objectFit = 'contain';
+            img.style.borderRadius = '16px';
+            setTimeout(() => {
+              img.style.transition = 'opacity 0.5s ease';
+              img.style.opacity = '1';
+            }, 10);
+          };
+        } else {
+          // Even if no image found, show placeholder
+          log.warn('No image URL found, showing placeholder');
+          const placeholderImg = document.createElement('img');
+          placeholderImg.src = `https://via.placeholder.com/600x400/7ED957/1a2e11?text=${encodeURIComponent(productName || 'Product')}`;
+          placeholderImg.alt = productName ? `${productName} product image` : 'Product image';
+          placeholderImg.className = 'item-info__image';
+          placeholderImg.style.width = '100%';
+          placeholderImg.style.height = 'auto';
+          placeholderImg.style.maxHeight = '400px';
+          placeholderImg.style.objectFit = 'contain';
+          placeholderImg.style.borderRadius = '16px';
+          const loadingEl = imageContainer.querySelector('.item-info__image-loading');
+          if (loadingEl) {
+            loadingEl.style.display = 'none';
+          }
+          imageContainer.appendChild(placeholderImg);
+        }
+      } catch (err) {
+        log.warn('Failed to load product image:', err);
+        imageContainer.style.display = 'none';
+      }
+    })();
+
+    // Header section with title and badges
+    const headerSection = document.createElement('div');
+    headerSection.className = 'item-info__header';
+
     const title = document.createElement('h3');
     title.className = 'item-info__title';
     title.textContent = info.title || info.name || info.alias || '';
+    title.setAttribute('data-searchable', 'true');
 
-    const desc = document.createElement('p');
-    desc.className = 'item-info__description';
-    desc.textContent = info.description || '';
-
-    const brand = document.createElement('p');
-    brand.className = 'item-info__brand';
-    brand.textContent = info.brand ? `Brand: ${info.brand}` : '';
-
-    itemInfoEl.appendChild(title);
-    if (desc.textContent) {
-      itemInfoEl.appendChild(desc);
+    // Add source badge
+    if (info.metadata?.source) {
+      const sourceBadge = document.createElement('span');
+      sourceBadge.className = 'item-info__source-badge';
+      sourceBadge.textContent = `📡 ${info.metadata.source}`;
+      headerSection.appendChild(sourceBadge);
     }
-    if (brand.textContent) {
-      itemInfoEl.appendChild(brand);
+
+    headerSection.appendChild(title);
+    contentContainer.appendChild(headerSection);
+
+    // Brand with icon
+    if (info.brand) {
+      const brandContainer = document.createElement('div');
+      brandContainer.className = 'item-info__brand-container';
+      const brandIcon = document.createElement('span');
+      brandIcon.className = 'item-info__brand-icon';
+      brandIcon.textContent = '🏷️';
+      const brand = document.createElement('span');
+      brand.className = 'item-info__brand';
+      brand.textContent = info.brand;
+      brand.setAttribute('data-searchable', 'true');
+      brandContainer.appendChild(brandIcon);
+      brandContainer.appendChild(brand);
+      contentContainer.appendChild(brandContainer);
+    }
+
+    // Description
+    if (info.description) {
+      const desc = document.createElement('p');
+      desc.className = 'item-info__description';
+      desc.textContent = info.description;
+      desc.setAttribute('data-searchable', 'true');
+      contentContainer.appendChild(desc);
+    }
+
+    // Add metadata if available - enhanced with expandable sections
+    const metadata = document.createElement('div');
+    metadata.className = 'item-info__metadata';
+
+    if (info.metadata) {
+      // Categories with icon
+      if (info.metadata.categories) {
+        const categoryItem = document.createElement('div');
+        categoryItem.className = 'item-info__metadata-item';
+        const categoryIcon = document.createElement('span');
+        categoryIcon.className = 'item-info__metadata-icon';
+        categoryIcon.textContent = '📂';
+        const categoryLabel = document.createElement('span');
+        categoryLabel.className = 'item-info__metadata-label';
+        categoryLabel.textContent = 'Categories:';
+        const categoryValue = document.createElement('span');
+        categoryValue.className = 'item-info__categories';
+        categoryValue.textContent = info.metadata.categories;
+        categoryValue.setAttribute('data-searchable', 'true');
+        categoryItem.appendChild(categoryIcon);
+        categoryItem.appendChild(categoryLabel);
+        categoryItem.appendChild(categoryValue);
+        metadata.appendChild(categoryItem);
+      }
+
+      // Ingredients with expandable section
+      if (info.metadata.ingredients) {
+        const ingredientsItem = document.createElement('div');
+        ingredientsItem.className = 'item-info__metadata-item item-info__metadata-expandable';
+        const ingredientsHeader = document.createElement('div');
+        ingredientsHeader.className = 'item-info__metadata-header';
+        const ingredientsIcon = document.createElement('span');
+        ingredientsIcon.className = 'item-info__metadata-icon';
+        ingredientsIcon.textContent = '🥘';
+        const ingredientsLabel = document.createElement('span');
+        ingredientsLabel.className = 'item-info__metadata-label';
+        ingredientsLabel.textContent = 'Ingredients:';
+        const expandBtn = document.createElement('button');
+        expandBtn.className = 'item-info__expand-btn';
+        expandBtn.innerHTML = '▲'; // Start with up arrow since it's expanded by default
+        expandBtn.setAttribute('aria-label', 'Collapse ingredients');
+
+        const ingredientsContent = document.createElement('div');
+        ingredientsContent.className = 'item-info__metadata-content';
+        ingredientsContent.style.display = 'block'; // Show by default
+        const ingredients = document.createElement('p');
+        ingredients.className = 'item-info__ingredients';
+        ingredients.textContent = info.metadata.ingredients;
+        ingredients.setAttribute('data-searchable', 'true');
+        ingredientsContent.appendChild(ingredients);
+
+        expandBtn.onclick = () => {
+          const isExpanded = ingredientsContent.style.display !== 'none';
+          ingredientsContent.style.display = isExpanded ? 'none' : 'block';
+          expandBtn.innerHTML = isExpanded ? '▼' : '▲';
+          expandBtn.setAttribute(
+            'aria-label',
+            isExpanded ? 'Expand ingredients' : 'Collapse ingredients'
+          );
+        };
+
+        ingredientsHeader.appendChild(ingredientsIcon);
+        ingredientsHeader.appendChild(ingredientsLabel);
+        ingredientsHeader.appendChild(expandBtn);
+        ingredientsItem.appendChild(ingredientsHeader);
+        ingredientsItem.appendChild(ingredientsContent);
+        metadata.appendChild(ingredientsItem);
+      }
+
+      // Nutrition grade if available
+      if (info.metadata.nutrition_grade) {
+        const nutritionItem = document.createElement('div');
+        nutritionItem.className = 'item-info__metadata-item';
+        const nutritionIcon = document.createElement('span');
+        nutritionIcon.className = 'item-info__metadata-icon';
+        nutritionIcon.textContent = '⭐';
+        const nutritionLabel = document.createElement('span');
+        nutritionLabel.className = 'item-info__metadata-label';
+        nutritionLabel.textContent = 'Nutrition Grade:';
+        const nutritionValue = document.createElement('span');
+        nutritionValue.className = 'item-info__nutrition-grade';
+        nutritionValue.textContent = info.metadata.nutrition_grade.toUpperCase();
+        nutritionItem.appendChild(nutritionIcon);
+        nutritionItem.appendChild(nutritionLabel);
+        nutritionItem.appendChild(nutritionValue);
+        metadata.appendChild(nutritionItem);
+      }
+
+      // Quantity if available
+      if (info.metadata.quantity) {
+        const quantityItem = document.createElement('div');
+        quantityItem.className = 'item-info__metadata-item';
+        const quantityIcon = document.createElement('span');
+        quantityIcon.className = 'item-info__metadata-icon';
+        quantityIcon.textContent = '📦';
+        const quantityLabel = document.createElement('span');
+        quantityLabel.className = 'item-info__metadata-label';
+        quantityLabel.textContent = 'Quantity:';
+        const quantityValue = document.createElement('span');
+        quantityValue.className = 'item-info__quantity';
+        quantityValue.textContent = info.metadata.quantity;
+        quantityItem.appendChild(quantityIcon);
+        quantityItem.appendChild(quantityLabel);
+        quantityItem.appendChild(quantityValue);
+        metadata.appendChild(quantityItem);
+      }
+
+      // Manufacturer if available
+      if (info.metadata.manufacturer) {
+        const manufacturerItem = document.createElement('div');
+        manufacturerItem.className = 'item-info__metadata-item';
+        const manufacturerIcon = document.createElement('span');
+        manufacturerIcon.className = 'item-info__metadata-icon';
+        manufacturerIcon.textContent = '🏭';
+        const manufacturerLabel = document.createElement('span');
+        manufacturerLabel.className = 'item-info__metadata-label';
+        manufacturerLabel.textContent = 'Manufacturer:';
+        const manufacturerValue = document.createElement('span');
+        manufacturerValue.className = 'item-info__manufacturer';
+        manufacturerValue.textContent = info.metadata.manufacturer;
+        manufacturerValue.setAttribute('data-searchable', 'true');
+        manufacturerItem.appendChild(manufacturerIcon);
+        manufacturerItem.appendChild(manufacturerLabel);
+        manufacturerItem.appendChild(manufacturerValue);
+        metadata.appendChild(manufacturerItem);
+      }
+    }
+
+    // Add expiration date input section
+    const expirationSection = document.createElement('div');
+    expirationSection.className = 'item-info__expiration-section';
+    const expirationLabel = document.createElement('label');
+    expirationLabel.className = 'item-info__expiration-label';
+    expirationLabel.innerHTML =
+      '<span class="item-info__expiration-icon">⏰</span> Expiration Date:';
+
+    const expirationInputWrapper = document.createElement('div');
+    expirationInputWrapper.className = 'item-info__expiration-input-wrapper';
+
+    const expirationInput = document.createElement('input');
+    expirationInput.type = 'date';
+    expirationInput.className = 'item-info__expiration-input';
+    expirationInput.setAttribute('aria-label', 'Product expiration date');
+
+    // Set minimum date to today
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    expirationInput.min = tomorrow.toISOString().split('T')[0];
+
+    // Calculate and display days until expiration
+    const expirationDisplay = document.createElement('div');
+    expirationDisplay.className = 'item-info__expiration-display';
+
+    const updateExpirationDisplay = () => {
+      if (expirationInput.value) {
+        const expirationDate = new Date(expirationInput.value);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        expirationDate.setHours(0, 0, 0, 0);
+
+        const diffTime = expirationDate - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays < 0) {
+          expirationDisplay.innerHTML = `<span class="expiration-badge expiration-expired">⚠️ Expired ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? 's' : ''} ago</span>`;
+        } else if (diffDays === 0) {
+          expirationDisplay.innerHTML = `<span class="expiration-badge expiration-today">⚠️ Expires today!</span>`;
+        } else if (diffDays <= 3) {
+          expirationDisplay.innerHTML = `<span class="expiration-badge expiration-soon">⚠️ Expires in ${diffDays} day${diffDays !== 1 ? 's' : ''}</span>`;
+        } else if (diffDays <= 7) {
+          expirationDisplay.innerHTML = `<span class="expiration-badge expiration-warning">Expires in ${diffDays} day${diffDays !== 1 ? 's' : ''}</span>`;
+        } else {
+          expirationDisplay.innerHTML = `<span class="expiration-badge expiration-good">✓ ${diffDays} day${diffDays !== 1 ? 's' : ''} until expiration</span>`;
+        }
+        expirationDisplay.style.display = 'block';
+      } else {
+        expirationDisplay.style.display = 'none';
+      }
+    };
+
+    expirationInput.addEventListener('change', async () => {
+      updateExpirationDisplay();
+      // Save expiration date to the scan
+      if (expirationInput.value) {
+        try {
+          // Get the barcode value from info (stored when scan was processed)
+          const barcodeValue = info.barcode || info.value || '';
+          if (barcodeValue) {
+            // Update the scan with expiration date
+            const { updateScanExpiration } = await import('./services/firebase-scans.js');
+            if (updateScanExpiration) {
+              await updateScanExpiration(barcodeValue, expirationInput.value);
+              log.info('Expiration date saved:', expirationInput.value);
+            }
+          }
+        } catch (err) {
+          log.warn('Failed to save expiration date:', err);
+        }
+      }
+    });
+
+    expirationInputWrapper.appendChild(expirationInput);
+    expirationInputWrapper.appendChild(expirationDisplay);
+    expirationSection.appendChild(expirationLabel);
+    expirationSection.appendChild(expirationInputWrapper);
+    contentContainer.appendChild(expirationSection);
+
+    // Add action buttons (Copy, Share, Save, View Online)
+    const actions = document.createElement('div');
+    actions.className = 'item-info__actions';
+
+    // Copy button
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'item-info__action-btn item-info__copy-btn';
+    const copySvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    copySvg.setAttribute('width', '18');
+    copySvg.setAttribute('height', '18');
+    copySvg.setAttribute('fill', 'currentColor');
+    copySvg.setAttribute('viewBox', '0 0 16 16');
+    const copyPath1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    copyPath1.setAttribute(
+      'd',
+      'M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1V14a1 1 0 0 1-1H3a1 1 0 0 1-1V3.5a1 1 0 0 1 1h1v-1z'
+    );
+    const copyPath2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    copyPath2.setAttribute(
+      'd',
+      'M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z'
+    );
+    copySvg.appendChild(copyPath1);
+    copySvg.appendChild(copyPath2);
+    const copySpan = document.createElement('span');
+    copySpan.textContent = 'Copy';
+    copyBtn.appendChild(copySvg);
+    copyBtn.appendChild(copySpan);
+    copyBtn.onclick = () => {
+      const textToCopy = `${info.title || ''}\n${info.brand ? `Brand: ${info.brand}\n` : ''}${info.description || ''}`;
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        const span = copyBtn.querySelector('span');
+        if (span) {
+          span.textContent = 'Copied!';
+        }
+        copyBtn.style.background = 'var(--success-color)';
+        copyBtn.style.color = 'white';
+        setTimeout(() => {
+          if (span) {
+            span.textContent = 'Copy';
+          }
+          copyBtn.style.background = '';
+          copyBtn.style.color = '';
+        }, 2000);
+      });
+    };
+    actions.appendChild(copyBtn);
+
+    // Share button (if Web Share API is available)
+    if (navigator.share) {
+      const shareBtn = document.createElement('button');
+      shareBtn.className = 'item-info__action-btn item-info__share-btn';
+      const shareSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      shareSvg.setAttribute('width', '18');
+      shareSvg.setAttribute('height', '18');
+      shareSvg.setAttribute('fill', 'currentColor');
+      shareSvg.setAttribute('viewBox', '0 0 16 16');
+      const sharePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      sharePath.setAttribute(
+        'd',
+        'M13.5 1a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM11 2.5a2.5 2.5 0 1 1 .603 1.628l-6.718 3.12a2.499 2.499 0 0 1 0 1.504l6.718 3.12a2.5 2.5 0 1 1-.488.876l-6.718-3.12a2.5 2.5 0 1 1 0-3.256l6.718-3.12A2.5 2.5 0 0 1 11 2.5zm-8.5 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm11 5.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z'
+      );
+      shareSvg.appendChild(sharePath);
+      const shareSpan = document.createElement('span');
+      shareSpan.textContent = 'Share';
+      shareBtn.appendChild(shareSvg);
+      shareBtn.appendChild(shareSpan);
+      shareBtn.onclick = async () => {
+        try {
+          await navigator.share({
+            title: info.title || 'Product Information',
+            text: `${info.title || ''}\n${info.brand ? `Brand: ${info.brand}\n` : ''}${info.description || ''}`,
+            url: window.location.href
+          });
+        } catch {
+          // User cancelled or error
+        }
+      };
+      actions.appendChild(shareBtn);
+    }
+
+    // Save to favorites button
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'item-info__action-btn item-info__save-btn';
+    const saveSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    saveSvg.setAttribute('width', '18');
+    saveSvg.setAttribute('height', '18');
+    saveSvg.setAttribute('fill', 'currentColor');
+    saveSvg.setAttribute('viewBox', '0 0 16 16');
+    const savePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    savePath.setAttribute(
+      'd',
+      'm8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357.955-1.886.838-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01L8 2.748zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143c.06.055.119.112.176.171a3.12 3.12 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15z'
+    );
+    saveSvg.appendChild(savePath);
+    const saveSpan = document.createElement('span');
+    saveSpan.textContent = 'Save';
+    saveBtn.appendChild(saveSvg);
+    saveBtn.appendChild(saveSpan);
+    saveBtn.onclick = () => {
+      // Toggle save state
+      const isSaved = saveBtn.classList.contains('item-info__save-btn--saved');
+      const svg = saveBtn.querySelector('svg');
+      const span = saveBtn.querySelector('span');
+
+      if (!svg) {
+        log.warn('Save button SVG not found');
+        return;
+      }
+
+      if (isSaved) {
+        saveBtn.classList.remove('item-info__save-btn--saved');
+        // Replace entire SVG path to avoid path attribute errors
+        const path = svg.querySelector('path');
+        if (path) {
+          path.setAttribute(
+            'd',
+            'm8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357.955-1.886.838-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01L8 2.748zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143c.06.055.119.112.176.171a3.12 3.12 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15z'
+          );
+        } else {
+          svg.innerHTML =
+            '<path d="m8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357.955-1.886.838-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01L8 2.748zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143c.06.055.119.112.176.171a3.12 3.12 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15z"/>';
+        }
+        if (span) {
+          span.textContent = 'Save';
+        }
+      } else {
+        saveBtn.classList.add('item-info__save-btn--saved');
+        // Replace entire SVG path to avoid path attribute errors
+        const path = svg.querySelector('path');
+        if (path) {
+          path.setAttribute(
+            'd',
+            'M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314z'
+          );
+        } else {
+          svg.innerHTML =
+            '<path d="M8 1.314C12.438-3.248 23.534 4.735 8 15-7.534 4.736 3.562-3.248 8 1.314z"/>';
+        }
+        if (span) {
+          span.textContent = 'Saved';
+        }
+      }
+    };
+    actions.appendChild(saveBtn);
+
+    // View online button (if we have a product URL or can construct one)
+    const viewOnlineBtn = document.createElement('button');
+    viewOnlineBtn.className = 'item-info__action-btn item-info__view-btn';
+    const viewSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    viewSvg.setAttribute('width', '18');
+    viewSvg.setAttribute('height', '18');
+    viewSvg.setAttribute('fill', 'currentColor');
+    viewSvg.setAttribute('viewBox', '0 0 16 16');
+    const viewPath1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    viewPath1.setAttribute('fill-rule', 'evenodd');
+    viewPath1.setAttribute(
+      'd',
+      'M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z'
+    );
+    const viewPath2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    viewPath2.setAttribute('fill-rule', 'evenodd');
+    viewPath2.setAttribute(
+      'd',
+      'M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z'
+    );
+    viewSvg.appendChild(viewPath1);
+    viewSvg.appendChild(viewPath2);
+    const viewSpan = document.createElement('span');
+    viewSpan.textContent = 'View Online';
+    viewOnlineBtn.appendChild(viewSvg);
+    viewOnlineBtn.appendChild(viewSpan);
+    viewOnlineBtn.onclick = () => {
+      // Try to find product URL or search online
+      const searchQuery = encodeURIComponent(`${info.title} ${info.brand || ''}`.trim());
+      const searchUrl = `https://www.google.com/search?q=${searchQuery}`;
+      window.open(searchUrl, '_blank', 'noopener,noreferrer');
+    };
+    actions.appendChild(viewOnlineBtn);
+
+    // Add all content to content container
+    // Title is already in headerSection which is already added
+    // Description and brand are already added conditionally above
+    if (metadata.children.length > 0) {
+      contentContainer.appendChild(metadata);
+    }
+    contentContainer.appendChild(actions);
+
+    // Add content container to main element
+    itemInfoEl.appendChild(contentContainer);
+
+    // Add search functionality
+    let searchTimeout;
+    searchInput.addEventListener('input', e => {
+      clearTimeout(searchTimeout);
+      const query = e.target.value.toLowerCase().trim();
+
+      if (query) {
+        clearBtn.style.display = 'block';
+      } else {
+        clearBtn.style.display = 'none';
+      }
+
+      // Debounce search for better performance
+      searchTimeout = setTimeout(() => {
+        const searchableElements = contentContainer.querySelectorAll('[data-searchable="true"]');
+        const metadataItems = contentContainer.querySelectorAll('.item-info__metadata-item');
+        let hasMatches = false;
+
+        // Search in searchable elements
+        searchableElements.forEach(el => {
+          const text = el.textContent.toLowerCase();
+          if (text.includes(query)) {
+            // Show parent containers
+            let parent = el.closest(
+              '.item-info__brand-container, .item-info__description, .item-info__metadata-item'
+            );
+            if (parent) {
+              parent.style.display = '';
+            } else {
+              el.style.display = '';
+            }
+            el.style.backgroundColor = '';
+            hasMatches = true;
+            // Highlight matching text
+            if (query.length > 2) {
+              highlightText(el, query);
+            }
+          } else {
+            // Hide if no match, but check if parent should stay visible
+            const parent = el.closest('.item-info__brand-container, .item-info__description');
+            if (
+              parent &&
+              !parent
+                .querySelector('[data-searchable="true"]')
+                ?.textContent.toLowerCase()
+                .includes(query)
+            ) {
+              parent.style.display = 'none';
+            } else if (!parent) {
+              el.style.display = 'none';
+            }
+          }
+        });
+
+        // Also search in metadata items
+        metadataItems.forEach(item => {
+          const text = item.textContent.toLowerCase();
+          if (text.includes(query)) {
+            item.style.display = '';
+            hasMatches = true;
+          } else {
+            // Don't hide expandable items, just their content
+            if (!item.classList.contains('item-info__metadata-expandable')) {
+              item.style.display = 'none';
+            }
+          }
+        });
+
+        // Show/hide "no results" message
+        let noResultsMsg = contentContainer.querySelector('.item-info__no-results');
+        if (!hasMatches && query) {
+          if (!noResultsMsg) {
+            noResultsMsg = document.createElement('p');
+            noResultsMsg.className = 'item-info__no-results';
+            noResultsMsg.textContent = '🔍 No matching information found.';
+            contentContainer.appendChild(noResultsMsg);
+          }
+        } else if (noResultsMsg) {
+          noResultsMsg.remove();
+        }
+      }, 200);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      clearBtn.style.display = 'none';
+      const searchableElements = contentContainer.querySelectorAll('[data-searchable="true"]');
+      const allElements = contentContainer.querySelectorAll(
+        '.item-info__brand-container, .item-info__description, .item-info__metadata-item'
+      );
+
+      // Show all elements
+      allElements.forEach(el => {
+        el.style.display = '';
+      });
+
+      searchableElements.forEach(el => {
+        el.style.display = '';
+        el.style.backgroundColor = '';
+        // Remove highlights
+        if (el.querySelector('.search-highlight')) {
+          const text = el.textContent;
+          el.textContent = text;
+        }
+      });
+
+      const noResultsMsg = contentContainer.querySelector('.item-info__no-results');
+      if (noResultsMsg) {
+        noResultsMsg.remove();
+      }
+      searchInput.focus();
+    });
+
+    // Helper function to highlight matching text
+    function highlightText(element, query) {
+      const text = element.textContent;
+      const regex = new RegExp(`(${query})`, 'gi');
+      if (regex.test(text)) {
+        const highlighted = text.replace(regex, '<mark class="search-highlight">$1</mark>');
+        element.innerHTML = highlighted;
+      }
     }
   }
 
   async function handleFetchedItemInfo(barcodeValue, panelEl, barcodeFormat = '') {
     if (!panelEl) {
       log.warn('Panel element not available for displaying item info');
-      return;
+      // Still save to Firebase even if panel is not available
+      try {
+        await saveScan({
+          value: barcodeValue,
+          format: barcodeFormat,
+          metadata: {
+            source: 'camera',
+            hasProductInfo: false
+          }
+        });
+      } catch (saveError) {
+        log.warn('Error saving scan to Firestore:', saveError);
+      }
+      return null;
     }
     try {
       const info = await fetchItemInfo(barcodeValue);
       if (info) {
+        // Add barcode value to info for expiration date tracking
+        info.barcode = barcodeValue;
+        info.value = barcodeValue;
+
         const name = info.title || info.name || info.alias || '';
         const desc = info.description || info.brand || '';
         const msg = `${name || barcodeValue}${desc ? ` — ${desc}` : ''}`;
@@ -266,7 +1022,7 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
           log.warn('Error saving scan to Firestore:', saveError);
         }
       }
-    } catch (_err) {
+    } catch {
       // ignore lookup errors but still save scan
       try {
         await saveScan({
@@ -323,33 +1079,48 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
       }
 
       // Attempt to fetch item info for 12-14 digit numeric barcodes
+      // This will also save to Firebase and display product info
+      let productInfo = null;
       if (cameraPanel) {
-        handleFetchedItemInfo(barcodeValue, cameraPanel, barcodeFormat);
+        productInfo = await handleFetchedItemInfo(barcodeValue, cameraPanel, barcodeFormat);
       }
 
-      if (settings?.addToHistory) {
-        try {
-          await bsHistoryEl?.add(barcodeValue);
-          // Open history and scroll the new item into view so countdown is visible immediately
-          if (historyDialog) {
-            historyDialog.open = true;
-            // small timeout to allow history element to render
-            setTimeout(() => {
-              try {
-                const li = bsHistoryEl?.shadowRoot?.querySelector(
-                  `li[data-value="${barcodeValue}"]`
-                );
+      // Always save to history (not conditional on settings)
+      // If product info was fetched, it's already saved to Firebase in handleFetchedItemInfo
+      // But we still need to add it to local history for the UI
+      try {
+        await bsHistoryEl?.add(barcodeValue);
+        // Open history and scroll the new item into view so countdown is visible immediately
+        if (historyDialog) {
+          historyDialog.open = true;
+          // small timeout to allow history element to render
+          setTimeout(() => {
+            try {
+              const li = bsHistoryEl?.shadowRoot?.querySelector(`li[data-value="${barcodeValue}"]`);
+              if (li) {
                 li?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 li?.classList?.add('highlight');
                 setTimeout(() => li?.classList?.remove('highlight'), 2000);
-              } catch (_e) {
-                // ignore
               }
-            }, 50);
-          }
-        } catch (_e) {
-          // ignore
+              // Update history item with product info if available
+              if (productInfo && li) {
+                if (productInfo.title) {
+                  li.setAttribute('data-title', productInfo.title);
+                }
+                if (productInfo.brand) {
+                  li.setAttribute('data-brand', productInfo.brand);
+                }
+                if (productInfo.description) {
+                  li.setAttribute('data-description', productInfo.description);
+                }
+              }
+            } catch (_e) {
+              // ignore
+            }
+          }, 50);
         }
+      } catch (_e) {
+        // ignore
       }
 
       triggerScanEffects();
@@ -443,7 +1214,7 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
       return;
     }
 
-    const [, settings] = await getSettings();
+    const [, _settings] = await getSettings();
     const image = new Image();
     const reader = new FileReader();
 
@@ -465,31 +1236,48 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
           }
 
           // Try to fetch item info for file-scanned barcodes as well
+          // This will also save to Firebase and display product info
+          let productInfo = null;
           if (filePanel) {
-            handleFetchedItemInfo(barcodeValue, filePanel, barcodeFormat);
+            productInfo = await handleFetchedItemInfo(barcodeValue, filePanel, barcodeFormat);
           }
 
-          if (settings?.addToHistory) {
-            try {
-              await bsHistoryEl?.add(barcodeValue);
-              if (historyDialog) {
-                historyDialog.open = true;
-                setTimeout(() => {
-                  try {
-                    const li = bsHistoryEl?.shadowRoot?.querySelector(
-                      `li[data-value="${barcodeValue}"]`
-                    );
+          // Always save to history (not conditional on settings)
+          // If product info was fetched, it's already saved to Firebase in handleFetchedItemInfo
+          // But we still need to add it to local history for the UI
+          try {
+            await bsHistoryEl?.add(barcodeValue);
+            if (historyDialog) {
+              historyDialog.open = true;
+              setTimeout(() => {
+                try {
+                  const li = bsHistoryEl?.shadowRoot?.querySelector(
+                    `li[data-value="${barcodeValue}"]`
+                  );
+                  if (li) {
                     li?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     li?.classList?.add('highlight');
                     setTimeout(() => li?.classList?.remove('highlight'), 2000);
-                  } catch (_e) {
-                    /* ignore */
                   }
-                }, 50);
-              }
-            } catch (_e) {
-              /* ignore */
+                  // Update history item with product info if available
+                  if (productInfo && li) {
+                    if (productInfo.title) {
+                      li.setAttribute('data-title', productInfo.title);
+                    }
+                    if (productInfo.brand) {
+                      li.setAttribute('data-brand', productInfo.brand);
+                    }
+                    if (productInfo.description) {
+                      li.setAttribute('data-description', productInfo.description);
+                    }
+                  }
+                } catch (_e) {
+                  /* ignore */
+                }
+              }, 50);
             }
+          } catch (_e) {
+            /* ignore */
           }
 
           triggerScanEffects();

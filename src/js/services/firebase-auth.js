@@ -1,12 +1,17 @@
 import {
-  signInAnonymously,
+  signInAnonymously as firebaseSignInAnonymously,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   updateProfile
 } from 'firebase/auth';
-import { auth, isFirebaseConfigured } from './firebase-config.js';
+import {
+  auth,
+  isFirebaseConfigured,
+  initFirebaseRuntime,
+  getAuthInstance
+} from './firebase-config.js';
 import { log } from '../utils/log.js';
 import { uuid } from '../utils/uuid.js';
 
@@ -36,18 +41,45 @@ function _notifyAuthListeners(user) {
  * Returns a promise that resolves with the initial user state
  */
 export function initAuth() {
-  if (!isFirebaseConfigured() || !auth) {
-    log.warn('Firebase not configured. Running in local-only mode.');
+  console.log('initAuth: Starting initialization...');
+
+  // First, try to initialize Firebase if configured
+  if (isFirebaseConfigured()) {
+    console.log('initAuth: Firebase is configured, initializing...');
+    const initResult = initFirebaseRuntime();
+    if (initResult.error) {
+      console.warn('initAuth: Firebase initialization failed:', initResult.error.message);
+      log.warn(
+        'Firebase initialization failed, falling back to local mode:',
+        initResult.error.message
+      );
+    } else {
+      console.log('initAuth: Firebase initialized successfully');
+    }
+  } else {
+    console.log('initAuth: Firebase not configured, using local mode');
+  }
+
+  // Get the auth instance (this will initialize Firebase if needed)
+  const authInstance = getAuthInstance();
+  console.log('initAuth: Auth instance:', authInstance ? 'available' : 'null');
+
+  if (!isFirebaseConfigured() || !authInstance) {
+    console.log('initAuth: Firebase not available, using local mode');
+    log.warn('Firebase not configured or failed to initialize. Running in local-only mode.');
     // Attempt to load local current user
     try {
       const raw = localStorage.getItem(LOCAL_CURRENT_USER_KEY);
       if (raw) {
         currentUser = JSON.parse(raw);
+        console.log('initAuth: Found local user:', currentUser.uid);
       } else {
         currentUser = null;
+        console.log('initAuth: No local user found');
       }
     } catch (_e) {
       currentUser = null;
+      console.log('initAuth: Error loading local user, using null');
     }
 
     // Notify listeners asynchronously
@@ -61,26 +93,101 @@ export function initAuth() {
       });
     }, 0);
 
+    console.log('initAuth: Resolving with local user:', currentUser ? 'found' : 'null');
     return Promise.resolve(currentUser);
   }
 
   // Return a promise that resolves with the initial auth state
-  // but does NOT unsubscribe - let onAuthStateChange handle persistent listening
+  // Add timeout to prevent hanging if Firebase doesn't respond
   return new Promise((resolve, reject) => {
-    // Use a one-time listener just to get initial state
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      user => {
-        currentUser = user;
-        // Unsubscribe this one-time listener
-        unsubscribe();
-        resolve(user);
-      },
-      error => {
-        log.error('Auth state error:', error);
-        reject(error);
+    let resolved = false;
+    let unsubscribe = null;
+
+    // First, try to get current user synchronously (if available)
+    try {
+      const currentAuthUser = authInstance.currentUser;
+      if (currentAuthUser !== null && currentAuthUser !== undefined) {
+        console.log('Firebase auth: Found current user synchronously:', currentAuthUser.uid);
+        currentUser = currentAuthUser;
+        resolve(currentAuthUser);
+        return;
       }
-    );
+    } catch (e) {
+      console.warn('Firebase auth: Error getting current user synchronously:', e);
+      // Continue with async listener
+    }
+
+    // Timeout after 3 seconds to prevent infinite loading (reduced from 5s for faster UX)
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        if (unsubscribe) {
+          try {
+            unsubscribe();
+          } catch (e) {
+            // Ignore unsubscribe errors
+          }
+        }
+        console.warn('Firebase auth check timed out after 3s, treating as unauthenticated');
+        log.warn('Firebase auth check timed out, treating as unauthenticated');
+        currentUser = null;
+        resolve(null);
+      }
+    }, 3000);
+
+    try {
+      // Use a one-time listener just to get initial state
+      console.log('Firebase auth: Setting up onAuthStateChanged listener...');
+      unsubscribe = onAuthStateChanged(
+        authInstance,
+        user => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            currentUser = user;
+            // Unsubscribe this one-time listener
+            if (unsubscribe) {
+              try {
+                unsubscribe();
+              } catch (e) {
+                // Ignore unsubscribe errors
+              }
+            }
+            console.log('Firebase auth initialized, user:', user ? user.uid : 'none');
+            log.info('Firebase auth initialized, user:', user ? user.uid : 'none');
+            resolve(user);
+          }
+        },
+        error => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            if (unsubscribe) {
+              try {
+                unsubscribe();
+              } catch (e) {
+                // Ignore unsubscribe errors
+              }
+            }
+            console.error('Auth state error:', error);
+            log.error('Auth state error:', error);
+            // Resolve with null instead of rejecting to prevent unhandled promise rejection
+            currentUser = null;
+            resolve(null);
+          }
+        }
+      );
+    } catch (error) {
+      // If onAuthStateChanged throws synchronously, catch it
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        console.error('Error setting up auth state listener:', error);
+        log.error('Error setting up auth state listener:', error);
+        currentUser = null;
+        resolve(null);
+      }
+    }
   });
 }
 
@@ -93,24 +200,26 @@ export function onAuthStateChange(callback) {
   // Always support auth state listeners; for local-only mode this will use localStorage
   authStateListeners.push(callback);
 
-  // Call immediately with current user (may be null)
-  try {
-    if (currentUser !== undefined) {
-      callback(currentUser);
+  // For local-only mode, call immediately with stored user
+  if (!isFirebaseConfigured() || !getAuthInstance()) {
+    // Call immediately with current user for local mode only
+    try {
+      if (currentUser !== undefined) {
+        callback(currentUser);
+      }
+    } catch (e) {
+      log.error('Auth listener error:', e);
     }
-  } catch (e) {
-    log.error('Auth listener error:', e);
-  }
-
-  if (!isFirebaseConfigured() || !auth) {
     // Return an unsubscribe that removes the listener
     return () => {
       authStateListeners = authStateListeners.filter(l => l !== callback);
     };
   }
 
-  // If Firebase is configured, delegate to Firebase's listener and also keep local registry
-  const unsubscribe = onAuthStateChanged(auth, user => {
+  // For Firebase mode, DO NOT call immediately - let Firebase's onAuthStateChanged
+  // be the source of truth to avoid race conditions with persistence
+  const authInstance = getAuthInstance();
+  const unsubscribe = onAuthStateChanged(authInstance, user => {
     currentUser = user;
     callback(user);
   });
@@ -127,7 +236,8 @@ export function onAuthStateChange(callback) {
  * @returns {Promise<{error: null|Error, user: object|null}>}
  */
 export async function signInAnonymous() {
-  if (!isFirebaseConfigured() || !auth) {
+  const authInstance = getAuthInstance();
+  if (!isFirebaseConfigured() || !authInstance) {
     // Local fallback anonymous user
     try {
       const localUser = { uid: `local-${uuid()}`, isAnonymous: true };
@@ -147,7 +257,7 @@ export async function signInAnonymous() {
   }
 
   try {
-    const result = await signInAnonymously(auth);
+    const result = await firebaseSignInAnonymously(authInstance);
     currentUser = result.user;
     log.info('Signed in anonymously:', result.user.uid);
     return { error: null, user: result.user };
@@ -165,7 +275,9 @@ export async function signInAnonymous() {
  * @returns {Promise<{error: null|Error, user: object|null}>}
  */
 export async function createAccount(email, password, displayName = '') {
-  if (!isFirebaseConfigured() || !auth) {
+  const authInstance = getAuthInstance();
+  if (!isFirebaseConfigured() || !authInstance) {
+    console.warn('Firebase not configured or not initialized, using local storage fallback');
     // Local fallback: create a user in localStorage (for development/testing only)
     try {
       if (!email || !password) {
@@ -208,7 +320,8 @@ export async function createAccount(email, password, displayName = '') {
   }
 
   try {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
+    console.log('Creating account with Firebase:', { email, displayName });
+    const result = await createUserWithEmailAndPassword(authInstance, email, password);
 
     // Set display name if provided
     if (displayName) {
@@ -216,10 +329,10 @@ export async function createAccount(email, password, displayName = '') {
     }
 
     currentUser = result.user;
-    log.info('Account created:', result.user.uid);
+    console.log('Firebase account created successfully:', result.user.uid);
     return { error: null, user: result.user };
   } catch (error) {
-    log.error('Error creating account:', error);
+    console.error('Firebase account creation failed:', error);
     return { error, user: null };
   }
 }
@@ -231,7 +344,8 @@ export async function createAccount(email, password, displayName = '') {
  * @returns {Promise<{error: null|Error, user: object|null}>}
  */
 export async function signInWithEmail(email, password) {
-  if (!isFirebaseConfigured() || !auth) {
+  const authInstance = getAuthInstance();
+  if (!isFirebaseConfigured() || !authInstance) {
     try {
       const raw = localStorage.getItem(LOCAL_USERS_KEY);
       const users = raw ? JSON.parse(raw) : [];
@@ -260,7 +374,7 @@ export async function signInWithEmail(email, password) {
   }
 
   try {
-    const result = await signInWithEmailAndPassword(auth, email, password);
+    const result = await signInWithEmailAndPassword(authInstance, email, password);
     currentUser = result.user;
     log.info('Signed in with email:', result.user.uid);
     return { error: null, user: result.user };
@@ -275,7 +389,8 @@ export async function signInWithEmail(email, password) {
  * @returns {Promise<{error: null|Error}>}
  */
 export async function signOut() {
-  if (!isFirebaseConfigured() || !auth) {
+  const authInstance = getAuthInstance();
+  if (!isFirebaseConfigured() || !authInstance) {
     // Local sign out
     try {
       currentUser = null;
@@ -290,7 +405,7 @@ export async function signOut() {
   }
 
   try {
-    await firebaseSignOut(auth);
+    await firebaseSignOut(authInstance);
     currentUser = null;
     log.info('Signed out');
     return { error: null };

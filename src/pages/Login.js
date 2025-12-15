@@ -1,25 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthProvider.jsx';
 import './Login.css';
 
 export default function Login() {
-  const { signInWithEmail } = useAuth();
+  const { signInWithEmail, user, authState } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({ email: '', password: '', general: '' });
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [loginSuccess, setLoginSuccess] = useState(false);
 
   // Validate email format
-  const validateEmail = (email) => {
+  const validateEmail = email => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
 
   // Handle form submission
-  const handleSubmit = async (e) => {
+  const handleSubmit = async e => {
     e.preventDefault();
 
     // Clear previous errors
@@ -53,25 +55,40 @@ export default function Login() {
     setLoading(true);
 
     try {
+      console.log('Attempting login with:', email.trim());
       const result = await signInWithEmail(email.trim(), password);
+      console.log('Login result:', result);
 
       if (result?.error) {
+        console.error('Login error:', result.error);
         // Handle specific Firebase errors with user-friendly messages
         const errorCode = result.error.code || '';
-        if (errorCode.includes('user-not-found') || errorCode.includes('wrong-password') || errorCode.includes('invalid-credential')) {
+        if (
+          errorCode.includes('user-not-found') ||
+          errorCode.includes('wrong-password') ||
+          errorCode.includes('invalid-credential')
+        ) {
           setErrors({ ...newErrors, general: 'Invalid email or password. Please try again.' });
         } else if (errorCode.includes('too-many-requests')) {
           setErrors({ ...newErrors, general: 'Too many failed attempts. Please try again later.' });
         } else if (errorCode.includes('network')) {
           setErrors({ ...newErrors, general: 'Network error. Please check your connection.' });
         } else {
-          setErrors({ ...newErrors, general: result.error.message || 'Failed to sign in. Please try again.' });
+          setErrors({
+            ...newErrors,
+            general: result.error.message || 'Failed to sign in. Please try again.'
+          });
         }
         setLoading(false);
       } else if (result?.user) {
-        // Successful login - navigate to app
-        navigate('/app/home', { replace: true });
+        console.log('Login successful, user:', result.user);
+        // Mark login as successful - navigation will happen via useEffect when auth state updates
+        setSuccess(true);
+        setLoginSuccess(true);
+        // Don't navigate here - wait for auth state to update via onAuthStateChange
+        // The useEffect below will handle navigation once authState becomes 'authenticated'
       } else {
+        console.warn('Login result has no error but no user either:', result);
         setErrors({ ...newErrors, general: 'An unexpected error occurred. Please try again.' });
         setLoading(false);
       }
@@ -83,25 +100,53 @@ export default function Login() {
 
   // Handle social login placeholders
   const handleGoogleLogin = () => {
-    setErrors({ email: '', password: '', general: 'Google login coming soon! Please use email for now.' });
+    setErrors({
+      email: '',
+      password: '',
+      general: 'Google login coming soon! Please use email for now.'
+    });
   };
 
   const handleGitHubLogin = () => {
-    setErrors({ email: '', password: '', general: 'GitHub login coming soon! Please use email for now.' });
+    setErrors({
+      email: '',
+      password: '',
+      general: 'GitHub login coming soon! Please use email for now.'
+    });
   };
 
   // Clear field-specific error when user starts typing
-  const handleEmailChange = (e) => {
+  const handleEmailChange = e => {
     setEmail(e.target.value);
     if (errors.email) setErrors(prev => ({ ...prev, email: '' }));
     if (errors.general) setErrors(prev => ({ ...prev, general: '' }));
   };
 
-  const handlePasswordChange = (e) => {
+  const handlePasswordChange = e => {
     setPassword(e.target.value);
     if (errors.password) setErrors(prev => ({ ...prev, password: '' }));
     if (errors.general) setErrors(prev => ({ ...prev, general: '' }));
   };
+
+  // Navigate to home when auth state becomes authenticated after successful login
+  useEffect(() => {
+    if (loginSuccess && (user || authState === 'authenticated')) {
+      console.log('Auth state updated, navigating to home...');
+      // Small delay to ensure state is fully propagated
+      const timer = setTimeout(() => {
+        navigate('/app/home', { replace: true });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [loginSuccess, user, authState, navigate]);
+
+  // Also handle case where user is already authenticated (e.g., from another tab)
+  useEffect(() => {
+    if (!loginSuccess && (user || authState === 'authenticated')) {
+      // User is already logged in, redirect to home
+      navigate('/app/home', { replace: true });
+    }
+  }, [user, authState, navigate, loginSuccess]);
 
   return (
     <div className="auth-page">
@@ -132,7 +177,9 @@ export default function Login() {
                   aria-describedby={errors.email ? 'email-error' : undefined}
                 />
                 {errors.email && (
-                  <span id="email-error" className="field-error">{errors.email}</span>
+                  <span id="email-error" className="field-error">
+                    {errors.email}
+                  </span>
                 )}
               </div>
 
@@ -161,16 +208,26 @@ export default function Login() {
                   </button>
                 </div>
                 {errors.password && (
-                  <span id="password-error" className="field-error">{errors.password}</span>
+                  <span id="password-error" className="field-error">
+                    {errors.password}
+                  </span>
                 )}
               </div>
 
               {errors.general && (
-                <div className="error-message" role="alert">{errors.general}</div>
+                <div className="error-message" role="alert">
+                  {errors.general}
+                </div>
               )}
 
-              <button type="submit" className="btn btn-primary" disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign In'}
+              {success && (
+                <div className="success-message" role="status">
+                  Login successful! Redirecting...
+                </div>
+              )}
+
+              <button type="submit" className="btn btn-primary" disabled={loading || success}>
+                {loading ? 'Signing in...' : success ? 'Success!' : 'Sign In'}
               </button>
             </form>
 

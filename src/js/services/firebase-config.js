@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 /**
@@ -21,18 +21,21 @@ if (typeof window !== 'undefined' && window.__FIREBASE_CONFIG__) {
   firebaseConfig = window.__FIREBASE_CONFIG__;
 } else {
   firebaseConfig = {
-    apiKey: process.env.FIREBASE_API_KEY || 'YOUR_API_KEY',
-    authDomain: process.env.FIREBASE_AUTH_DOMAIN || 'YOUR_AUTH_DOMAIN',
-    projectId: process.env.FIREBASE_PROJECT_ID || 'YOUR_PROJECT_ID',
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'YOUR_STORAGE_BUCKET',
-    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || 'YOUR_MESSAGING_SENDER_ID',
-    appId: process.env.FIREBASE_APP_ID || 'YOUR_APP_ID'
+    apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyB3pqOLSVYd34ZuxYrgQ1WbA4aQ87UvlyI',
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN || 'barcode-scanner-cs465.firebaseapp.com',
+    projectId: process.env.FIREBASE_PROJECT_ID || 'barcode-scanner-cs465',
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'barcode-scanner-cs465.firebasestorage.app',
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '1016848066280',
+    appId: process.env.FIREBASE_APP_ID || '1:1016848066280:web:99eabe356f4acbc452cb5d',
+    measurementId: process.env.FIREBASE_MEASUREMENT_ID || 'G-5SN0SF9MGE'
   };
 }
 
 // Check if Firebase is configured
 const isFirebaseConfigured = () => {
-  return firebaseConfig.apiKey !== 'YOUR_API_KEY' && 
+  return firebaseConfig.apiKey &&
+         firebaseConfig.projectId &&
+         firebaseConfig.apiKey !== 'YOUR_API_KEY' &&
          firebaseConfig.projectId !== 'YOUR_PROJECT_ID';
 };
 
@@ -66,6 +69,13 @@ function _initializeFirebase(configOverride = null) {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
+
+    // Set auth persistence to LOCAL (survives browser restarts)
+    // This ensures users stay logged in across sessions
+    setPersistence(auth, browserLocalPersistence).catch(err => {
+      console.warn('Could not set auth persistence:', err);
+    });
+
     return { error: null };
   } catch (error) {
     console.error('Error initializing Firebase:', error);
@@ -78,6 +88,32 @@ function _initializeFirebase(configOverride = null) {
  */
 export function initFirebaseRuntime(configOverride = null) {
   return _initializeFirebase(configOverride);
+}
+
+/**
+ * Get the auth instance, initializing Firebase if needed
+ */
+export function getAuthInstance() {
+  if (!auth && isFirebaseConfigured()) {
+    _initializeFirebase();
+  }
+  return auth;
+}
+
+/**
+ * Get the Firestore instance, initializing Firebase if needed
+ */
+export function getDbInstance() {
+  if (!db && isFirebaseConfigured()) {
+    _initializeFirebase();
+  }
+  return db;
+}
+
+// Auto-initialize Firebase if configured
+if (isFirebaseConfigured()) {
+  _initializeFirebase();
+  console.log('Firebase initialized automatically');
 }
 
 export { app, auth, db, isFirebaseConfigured };

@@ -1,125 +1,358 @@
+<!DOCTYPE html>
 <html lang="en">
-<link rel="stylesheet" type="text/css" href="./css/main.css">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scanned Ingredients - Barcode Scanner</title>
+  <link rel="stylesheet" type="text/css" href="./css/main.css">
+  <style>
+    .ingredients-page-legacy {
+      min-height: calc(100vh - 80px);
+      padding: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      background: var(--background);
+    }
 
-<header class="navigation">
-    <a href= "./index.html"><h1 class="header-title">Barcode Scanner App</h1></a>   
-    <ul id = "Header List" class = "navigationList"> 
-      <li class="navigationListItem" id="1"><a href="./index.html">Home </a></li>
-      <li class="navigationListItem" id="2"><a href="./Ingredients.html">Ingredients </a></li>
-      <li class="navigationListItem" id="3"><a href="./recipes.html">Recipes </a></li>
-      <li class="navigationListItem">
-        <form onSubmit={submitAnswer}>
-        <input type="text" value=""></input>
-        <input type="submit" value="Search"></input>
-        </form>
-      </li>
+    .ingredients-header-legacy {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding: 2rem 0;
+    }
+
+    .ingredients-header-legacy h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      color: #ffffff;
+      margin-bottom: 0.75rem;
+      font-weight: 800;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 20px rgba(126, 217, 87, 0.3);
+      letter-spacing: -0.02em;
+    }
+
+    .ingredients-header-legacy p {
+      font-size: 1.2rem;
+      color: #e8f5e1;
+      font-weight: 600;
+      margin: 0;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .ingredients-search-legacy {
+      margin-bottom: 2.5rem;
+      position: relative;
+    }
+
+    .ingredients-search-legacy input {
+      width: 100%;
+      padding: 1rem 1.25rem;
+      border: 3px solid var(--food-mint);
+      border-radius: 16px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #1a2e11;
+      background: #ffffff;
+      box-shadow: 0 4px 12px rgba(126, 217, 87, 0.15);
+      transition: all 0.3s ease;
+    }
+
+    .ingredients-search-legacy input:focus {
+      outline: none;
+      border-color: var(--food-mint);
+      box-shadow: 0 6px 20px rgba(126, 217, 87, 0.4);
+      transform: translateY(-2px);
+      background: #ffffff;
+    }
+
+    .ingredients-search-legacy input::placeholder {
+      color: #6c757d;
+      opacity: 0.8;
+      font-weight: 500;
+    }
+
+    .ingredients-list-legacy {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .ingredient-item-legacy {
+      background: linear-gradient(135deg, #ffffff 0%, var(--background-alt) 100%);
+      border: 2px solid var(--food-mint);
+      border-radius: 16px;
+      padding: 1.5rem;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(126, 217, 87, 0.1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ingredient-item-legacy::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--food-mint) 0%, var(--food-herb) 100%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .ingredient-item-legacy:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(126, 217, 87, 0.25);
+      border-color: var(--food-green);
+    }
+
+    .ingredient-item-legacy:hover::before {
+      opacity: 1;
+    }
+
+    .ingredient-item-legacy h3 {
+      margin: 0 0 0.75rem 0;
+      color: #1a2e11;
+      font-size: 1.3rem;
+      font-weight: 700;
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    .ingredient-item-legacy p {
+      margin: 0.5rem 0;
+      color: #2d5016;
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1.6;
+    }
+
+    .ingredient-item-legacy p strong {
+      color: #1a2e11;
+      font-weight: 700;
+      margin-right: 0.5rem;
+    }
+
+    .ingredient-item-legacy p:last-child {
+      font-size: 0.9rem;
+      color: #3d6b1f;
+      font-weight: 600;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .empty-state-legacy {
+      text-align: center;
+      padding: 5rem 2rem;
+      background: linear-gradient(135deg, rgba(126, 217, 87, 0.1) 0%, rgba(126, 217, 87, 0.05) 100%);
+      border-radius: 20px;
+      border: 2px dashed var(--food-mint);
+    }
+
+    .empty-state-legacy div {
+      font-size: 5rem;
+      margin-bottom: 1.5rem;
+      filter: drop-shadow(0 4px 8px rgba(126, 217, 87, 0.2));
+    }
+
+    .empty-state-legacy h2 {
+      font-size: 2rem;
+      color: #1a2e11;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+
+    .empty-state-legacy p {
+      font-size: 1.1rem;
+      color: #2d5016;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    #user-ingredients-list {
+      min-height: 200px;
+    }
+
+    #user-ingredients-list:empty::before {
+      content: 'Loading your ingredients...';
+      display: block;
+      text-align: center;
+      padding: 3rem;
+      color: #e8f5e1;
+      font-size: 1.1rem;
+      font-weight: 600;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    @media (max-width: 768px) {
+      .ingredients-page-legacy {
+        padding: 1rem;
+      }
+
+      .ingredients-list-legacy {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      .ingredient-item-legacy {
+        padding: 1.25rem;
+      }
+
+      .ingredients-header-legacy {
+        margin-bottom: 2rem;
+        padding: 1rem 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="navigation">
+    <a href="./index.html"><h1 class="header-title">Barcode Scanner App</h1></a>
+    <ul id="Header List" class="navigationList">
+      <li class="navigationListItem" id="1"><a href="./index.html">Home</a></li>
+      <li class="navigationListItem" id="2"><a href="./Ingredients.html">Ingredients</a></li>
+      <li class="navigationListItem" id="3"><a href="./recipes.html">Recipes</a></li>
     </ul>
   </header>
 
-<div class="body">
-  <h1 class="header-title">Ingredients</h1>
-  <section id="user-ingredients">
-    <h2>Your Scanned Items</h2>
-    <div id="user-ingredients-list">Loading...</div>
-  </section>
-</div>
+  <div class="ingredients-page-legacy">
+    <div class="ingredients-header-legacy">
+      <h1>Scanned Ingredients</h1>
+      <p>View and manage all your scanned grocery items</p>
+    </div>
+
+    <div class="ingredients-search-legacy">
+      <input
+        type="text"
+        id="ingredients-search-input"
+        placeholder="Search ingredients..."
+        autocomplete="off"
+      />
+    </div>
+
+    <section id="user-ingredients">
+      <div id="user-ingredients-list">Loading...</div>
+    </section>
+  </div>
 
 <script type="module">
-  import { initAuth, getCurrentUser } from './js/services/firebase-auth.js';
-  import { getHistory } from './js/services/storage.js';
+  import { getUserScans } from './js/services/firebase-scans.js';
 
   async function fetchUserIngredients() {
     const container = document.getElementById('user-ingredients-list');
     container.innerHTML = 'Loading...';
 
-    // 1) Try to use firebase-auth module (works when Firebase client is configured)
     try {
-      let user = null;
-      try { user = await initAuth(); } catch (e) { /* ignore */ }
+      // Use getUserScans directly - works with Firestore or local storage
+      const { error: fetchError, scans } = await getUserScans(200);
 
-      if (!user) user = getCurrentUser();
-      let token = null;
-
-      if (user && typeof user.getIdToken === 'function') {
-        try { token = await user.getIdToken(); } catch (e) { console.warn('user.getIdToken failed', e); }
+      if (fetchError) {
+        throw new Error(fetchError.message || 'Failed to load ingredients');
       }
 
-      // 2) If no token from firebase-auth above, try reading token React might have saved
-      if (!token) {
-        // React snippet (see next section) stores keys `barcode-scanner/idToken` and `barcode-scanner/uid`
-        token = localStorage.getItem('barcode-scanner/idToken') || null;
-      }
+      // Transform scans to match expected format
+      const items = scans.map(scan => ({
+        id: scan.id,
+        title: scan.title || scan.value || 'Unknown Item',
+        brand: scan.brand || '',
+        description: scan.description || '',
+        value: scan.value,
+        addedAt: scan.scannedAt
+          ? scan.scannedAt instanceof Date
+            ? scan.scannedAt.toISOString()
+            : new Date(scan.scannedAt).toISOString()
+          : new Date().toISOString()
+      }));
 
-      // 3) If we have a token, call the proxy endpoint
-      if (token) {
-        try {
-          const res = await fetch('/user/ingredients', {
-            method: 'GET',
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const json = await res.json();
-            renderItems(json.items || []);
-            return;
-          } else {
-            console.warn('/user/ingredients returned', res.status);
-            // If server says token invalid or Firestore not configured, fallthrough to local fallback
-          }
-        } catch (err) {
-          console.error('Fetch /user/ingredients failed', err);
-        }
-      }
-
-      // 4) No valid server token or server refused: show local IndexedDB history fallback
-      try {
-        const [, history = []] = await getHistory();
-        // Optionally filter by uid if React stored one in localStorage
-        const uid = localStorage.getItem('barcode-scanner/uid') || null;
-        let items = history.map(h => (typeof h === 'string' ? { title: h, addedAt: h.addedAt } : { title: h.title || h.value || '(unknown)', addedAt: h.addedAt || h.addedAt }));
-        if (uid) {
-          // If your local-saves include userId field, filter by it
-          items = items.filter(it => !it.userId || it.userId === uid ? true : false);
-        }
-        // De-duplicate and show
-        items = items.slice(0, 200);
-        renderItems(items);
-        return;
-      } catch (err) {
-        console.error('Local fallback failed', err);
-      }
-
-      // Final fallback message
-      container.innerHTML = '<p>Sign in (in the React UI) to view your scanned items, or enable server-side Firestore.</p>';
-
+      renderItems(items);
     } catch (err) {
-      console.error('Unexpected error', err);
-      document.getElementById('user-ingredients-list').innerHTML = '<p>Error loading items.</p>';
+      console.error('Error loading ingredients:', err);
+      container.innerHTML = `
+        <div class="empty-state-legacy">
+          <div style="font-size: 4rem; margin-bottom: 1rem;">⚠️</div>
+          <h2 style="color: #1a2e11;">Error Loading Ingredients</h2>
+          <p style="color: #2d5016;">${err.message || 'Failed to load ingredients. Please try refreshing the page.'}</p>
+        </div>
+      `;
     }
   }
+
+  let allItems = [];
 
   function renderItems(items) {
     const container = document.getElementById('user-ingredients-list');
     container.innerHTML = '';
+
     if (!items || items.length === 0) {
-      container.innerHTML = '<p>No scanned items yet.</p>';
+      container.innerHTML = `
+        <div class="empty-state-legacy">
+          <div style="font-size: 4rem; margin-bottom: 1rem;">📦</div>
+          <h2>No scanned items yet</h2>
+          <p>Start scanning barcodes to see your ingredients here!</p>
+        </div>
+      `;
       return;
     }
-    const ul = document.createElement('ul');
+
+    allItems = items; // Store for search filtering
+
+    const grid = document.createElement('div');
+    grid.className = 'ingredients-list-legacy';
+
     for (const it of items) {
-      const title = it.title || it.value || '(unknown)';
-      const when = it.addedAt ? ` — ${new Date(it.addedAt).toLocaleString()}` : '';
-      const li = document.createElement('li');
-      li.textContent = `${title}${when}`;
-      ul.appendChild(li);
+      const title = it.title || it.value || 'Unknown Item';
+      const when = it.addedAt ? new Date(it.addedAt).toLocaleString() : '';
+      const brand = it.brand || '';
+      const description = it.description || '';
+
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'ingredient-item-legacy';
+      itemDiv.setAttribute('data-title', title.toLowerCase());
+      itemDiv.setAttribute('data-brand', brand.toLowerCase());
+
+      itemDiv.innerHTML = `
+        <h3>${title}</h3>
+        ${brand ? `<p><strong>Brand:</strong> ${brand}</p>` : ''}
+        ${description ? `<p>${description}</p>` : ''}
+        ${when ? `<p><strong>Scanned:</strong> ${when}</p>` : ''}
+      `;
+
+      grid.appendChild(itemDiv);
     }
-    container.appendChild(ul);
+
+    container.appendChild(grid);
   }
 
-  document.addEventListener('DOMContentLoaded', fetchUserIngredients);
+  // Add search functionality
+  function setupSearch() {
+    const searchInput = document.getElementById('ingredients-search-input');
+    if (!searchInput) return;
+
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      const items = document.querySelectorAll('.ingredient-item-legacy');
+
+      if (!query) {
+        items.forEach(item => item.style.display = '');
+        return;
+      }
+
+      items.forEach(item => {
+        const title = item.getAttribute('data-title') || '';
+        const brand = item.getAttribute('data-brand') || '';
+        const matches = title.includes(query) || brand.includes(query);
+        item.style.display = matches ? '' : 'none';
+      });
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    fetchUserIngredients();
+    setupSearch();
+  });
 </script>
 
   <footer class="navigation bottomnav">
-    <ul id = "Navigation Footer List" class = "navigationList"> 
+    <ul id = "Navigation Footer List" class = "navigationList">
       <li class="navigationListItem" id="1"><a href="./about.html">About </a></li>
       <li class="navigationListItem" id="2"><a href="./faq.html">FAQ </a></li>
       <li class="navigationListItem" id="3"><a href="./contact.html">Contact </a></li>

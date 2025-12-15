@@ -41,7 +41,7 @@ export default function Contact() {
           <section className="contact-section">
             <h2>Project Team</h2>
             <p className="contact-intro">
-              This is a CS465 project by a team of SNHU students. For inquiries, please contact any team member below.
+              This is a CS465 project by a team of students. For inquiries, please contact any team member below.
             </p>
             <div className="team-contact-grid">
               {teamMembers.map((member, index) => (

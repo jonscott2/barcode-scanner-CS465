@@ -6,11 +6,10 @@ import {
   doc,
   query,
   where,
-  orderBy,
-  limit,
   Timestamp,
   enableIndexedDbPersistence,
-  writeBatch
+  writeBatch,
+  updateDoc
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase-config.js';
 import { getUserId } from './firebase-auth.js';
@@ -61,6 +60,7 @@ function createLocalScanObject(scanData, extras = {}) {
     brand: scanData.brand || '',
     description: scanData.description || '',
     format: scanData.format || '',
+    expirationDate: scanData.expirationDate || null,
     metadata: scanData.metadata || {},
     ...extras
   };
@@ -94,6 +94,7 @@ export async function saveScan(scanData) {
         title: scanData.title || '',
         brand: scanData.brand || '',
         description: scanData.description || '',
+        expirationDate: scanData.expirationDate || null,
         metadata: scanData.metadata || {},
         scannedAt: Timestamp.now(),
         createdAt: Timestamp.now(),
@@ -130,6 +131,84 @@ export async function saveScan(scanData) {
   }
 
   return { error: firestoreError, scanId };
+}
+
+/**
+ * Update expiration date for a scan
+ * @param {string} barcodeValue - The barcode value to find the scan
+ * @param {string} expirationDate - The expiration date in YYYY-MM-DD format
+ * @returns {Promise<{error: null|Error, success: boolean}>}
+ */
+export async function updateScanExpiration(barcodeValue, expirationDate) {
+  const userId = getUserId();
+
+  if (!isFirebaseConfigured() || !db || !userId) {
+    // Update local storage
+    try {
+      const [, history = []] = await getHistory();
+      const updatedHistory = history.map(item => {
+        if (item.value === barcodeValue) {
+          return {
+            ...item,
+            expirationDate: expirationDate
+          };
+        }
+        return item;
+      });
+      await setHistory(updatedHistory);
+      return { error: null, success: true };
+    } catch (err) {
+      log.error('Error updating expiration date in local storage:', err);
+      return { error: err, success: false };
+    }
+  }
+
+  // Update Firestore
+  try {
+    const scansQuery = query(
+      collection(db, SCANS_COLLECTION),
+      where('userId', '==', userId),
+      where('value', '==', barcodeValue)
+    );
+    const querySnapshot = await getDocs(scansQuery);
+
+    if (!querySnapshot.empty) {
+      // Update the most recent scan with this barcode
+      const docs = querySnapshot.docs;
+      const mostRecentDoc = docs.reduce((latest, current) => {
+        const latestTime = latest.data().scannedAt?.toMillis() || 0;
+        const currentTime = current.data().scannedAt?.toMillis() || 0;
+        return currentTime > latestTime ? current : latest;
+      }, docs[0]);
+
+      await updateDoc(doc(db, SCANS_COLLECTION, mostRecentDoc.id), {
+        expirationDate: expirationDate,
+        updatedAt: Timestamp.now()
+      });
+
+      // Also update local storage
+      const [, history = []] = await getHistory();
+      const updatedHistory = history.map(item => {
+        if (item.value === barcodeValue || item.firestoreId === mostRecentDoc.id) {
+          return {
+            ...item,
+            expirationDate: expirationDate
+          };
+        }
+        return item;
+      });
+      await setHistory(updatedHistory);
+
+      log.info('Expiration date updated for scan:', mostRecentDoc.id);
+      return { error: null, success: true };
+    } else {
+      log.warn('No scan found with barcode:', barcodeValue);
+      return { error: new Error('Scan not found'), success: false };
+    }
+  } catch (err) {
+    log.error('Error updating expiration date:', err);
+    return { error: err, success: false };
+  }
 }
 
 /**
@@ -170,12 +249,9 @@ export async function getUserScans(maxResults = 100) {
   }
 
   try {
-    const scansQuery = query(
-      collection(db, SCANS_COLLECTION),
-      where('userId', '==', userId),
-      orderBy('scannedAt', 'desc'),
-      limit(maxResults)
-    );
+    // Query without orderBy to avoid requiring a composite index
+    // We'll sort in JavaScript instead
+    const scansQuery = query(collection(db, SCANS_COLLECTION), where('userId', '==', userId));
 
     const querySnapshot = await getDocs(scansQuery);
     const scans = [];
@@ -188,10 +264,27 @@ export async function getUserScans(maxResults = 100) {
       });
     });
 
-    log.info(`Retrieved ${scans.length} scans from Firestore`);
-    return { error: null, scans };
+    // Sort by scannedAt descending in JavaScript (no index required)
+    scans.sort((a, b) => {
+      const dateA = a.scannedAt instanceof Date ? a.scannedAt : new Date(a.scannedAt);
+      const dateB = b.scannedAt instanceof Date ? b.scannedAt : new Date(b.scannedAt);
+      return dateB.getTime() - dateA.getTime(); // Descending order
+    });
+
+    // Apply limit after sorting
+    const limitedScans = scans.slice(0, maxResults);
+
+    log.info(`Retrieved ${limitedScans.length} scans from Firestore`);
+    return { error: null, scans: limitedScans };
   } catch (error) {
-    log.error('Error getting scans from Firestore:', error);
+    // Check if it's an index error - provide helpful message
+    if (error.code === 'failed-precondition' && error.message?.includes('index')) {
+      log.warn(
+        'Firestore query requires an index. Falling back to local storage. The app will still work, but you may want to create the index for better performance.'
+      );
+    } else {
+      log.error('Error getting scans from Firestore:', error);
+    }
 
     // Fallback: try to get from local storage
     try {
@@ -208,13 +301,26 @@ export async function getUserScans(maxResults = 100) {
           metadata: item.metadata || {}
         }));
 
-        log.info('Returning scans from local storage (Firestore unavailable)');
-        return { error: null, scans };
+        // Sort by scannedAt descending (same as Firestore query would)
+        scans.sort((a, b) => {
+          const dateA = a.scannedAt instanceof Date ? a.scannedAt : new Date(a.scannedAt);
+          const dateB = b.scannedAt instanceof Date ? b.scannedAt : new Date(b.scannedAt);
+          return dateB.getTime() - dateA.getTime(); // Descending order
+        });
+
+        // Apply limit
+        const limitedScans = scans.slice(0, maxResults);
+
+        log.info(
+          `Returning ${limitedScans.length} scans from local storage (Firestore unavailable)`
+        );
+        return { error: null, scans: limitedScans };
       }
     } catch (localError) {
       log.error('Error getting scans from local storage:', localError);
     }
 
+    // Return the error but don't throw - let the caller handle it
     return { error, scans: [] };
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   HashRouter as Router,
   Routes,
@@ -9,7 +9,9 @@ import {
   useNavigate,
   useLocation
 } from 'react-router-dom';
+import { getAuth } from 'firebase/auth';
 import { AuthProvider, useAuth } from './contexts/AuthProvider.jsx';
+import { getTheme, toggleTheme } from './js/services/theme.js';
 
 // Page Imports
 import LandingPage from './pages/LandingPage.js';
@@ -75,6 +77,7 @@ function AppLayout() {
   const { logout, setLastPage, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [currentTheme, setCurrentTheme] = useState(getTheme());
 
   // Track current page for "continue where you left off" feature
   useEffect(() => {
@@ -83,7 +86,25 @@ function AppLayout() {
     }
   }, [location.pathname, setLastPage, user]);
 
-  const handleLogout = async (e) => {
+  // Update theme state when it changes
+  useEffect(() => {
+    const handleThemeChange = () => {
+      setCurrentTheme(getTheme());
+    };
+
+    // Listen for storage changes (if theme is changed in another tab)
+    window.addEventListener('storage', handleThemeChange);
+
+    // Check theme periodically (in case changed programmatically)
+    const interval = setInterval(handleThemeChange, 1000);
+
+    return () => {
+      window.removeEventListener('storage', handleThemeChange);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleLogout = async e => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -91,31 +112,39 @@ function AppLayout() {
     navigate('/', { replace: true });
   };
 
+  const handleThemeToggle = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const newTheme = toggleTheme();
+    setCurrentTheme(newTheme);
+  };
+
   return (
     <div>
       <header className="navigation">
         <nav>
           <div className="nav-brand">
-            <svg
-              width="32"
-              height="32"
-              viewBox="0 0 32 32"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              style={{ marginRight: '0.5rem' }}
-            >
-              <rect width="32" height="32" rx="6" fill="var(--food-green)" />
-              <path d="M16 8L20 14H12L16 8Z" fill="var(--food-mint)" />
-              <path d="M8 20L12 26H4L8 20Z" fill="var(--food-mint)" />
-              <path d="M24 20L28 26H20L24 20Z" fill="var(--food-mint)" />
-            </svg>
-            <span style={{ fontWeight: 700, color: 'white' }}>SNHU Scanner</span>
+            <img 
+              src="/assets/logo.svg" 
+              alt="Sifts Logo" 
+              style={{ width: '32px', height: '32px', marginRight: '0.5rem', borderRadius: '4px' }}
+            />
+            <span style={{ fontWeight: 700, color: 'white' }}>Sifts</span>
           </div>
           <div className="nav-links">
             <Link to="/app/home">Home</Link>
             <Link to="/app/scanner">Scanner</Link>
             <Link to="/app/ingredients">Ingredients</Link>
             <Link to="/app/recipes">Recipes</Link>
+            <button
+              type="button"
+              onClick={handleThemeToggle}
+              className="theme-toggle-button"
+              aria-label={`Switch to ${currentTheme === 'light' ? 'dark' : 'light'} mode`}
+              title={`Switch to ${currentTheme === 'light' ? 'dark' : 'light'} mode`}
+            >
+              {currentTheme === 'light' ? '🌙' : '☀️'}
+            </button>
             <button
               type="button"
               onClick={handleLogout}
@@ -138,27 +167,61 @@ function AppLayout() {
  * Protected route wrapper - requires authentication
  * Shows loading spinner while auth state is being determined
  * Redirects to login if not authenticated
+ *
+ * Auth state logic:
+ * - If loading is true OR authState is 'loading': show spinner
+ * - Check React state first (user or authState === 'authenticated')
+ * - Fallback: check Firebase auth directly (in case React state hasn't updated yet)
+ * - Otherwise: redirect to login
  */
 function ProtectedRoutes() {
   const { user, loading, authState } = useAuth();
+  const [firebaseUser, setFirebaseUser] = useState(null);
+
+  // Check Firebase auth directly as a fallback (in case React state hasn't updated)
+  useEffect(() => {
+    try {
+      const auth = getAuth();
+      if (auth) {
+        const currentUser = auth.currentUser;
+        setFirebaseUser(currentUser);
+      }
+    } catch (e) {
+      // Firebase not initialized or error
+      setFirebaseUser(null);
+    }
+  }, [user, authState]); // Re-check when React state changes
 
   // Show loading while auth state is being determined
   if (loading || authState === 'loading') {
     return <AuthLoadingSpinner />;
   }
 
-  // Redirect to login if not authenticated
-  if (!user || authState === 'unauthenticated') {
+  // Check if user is authenticated (React state OR Firebase direct check)
+  const isAuthenticated = user || authState === 'authenticated' || firebaseUser;
+
+  // Only redirect if we're sure the user is not authenticated
+  if (!loading && !isAuthenticated && authState === 'unauthenticated') {
     return <Navigate to="/login" replace />;
   }
 
-  // User is authenticated - render the app layout
-  return <AppLayout />;
+  // If authenticated (by any means), allow access
+  if (isAuthenticated) {
+    return <AppLayout />;
+  }
+
+  // Fallback: if we're not loading but don't have clear auth state, redirect to login
+  return <Navigate to="/login" replace />;
 }
 
 /**
  * Public route wrapper - for landing, login, signup pages
  * Redirects authenticated users to the app
+ *
+ * Auth state logic:
+ * - If loading: show spinner
+ * - If authenticated (user exists OR authState is 'authenticated'): redirect to app
+ * - Otherwise: show public content
  */
 function PublicRoute({ children, redirectAuthenticated = true }) {
   const { user, loading, authState } = useAuth();
@@ -169,7 +232,8 @@ function PublicRoute({ children, redirectAuthenticated = true }) {
   }
 
   // Redirect authenticated users to app home
-  if (redirectAuthenticated && user && authState === 'authenticated') {
+  // Check both user and authState to be thorough
+  if (redirectAuthenticated && (user || authState === 'authenticated')) {
     return <Navigate to="/app/home" replace />;
   }
 

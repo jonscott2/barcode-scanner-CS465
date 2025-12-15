@@ -1,7 +1,7 @@
 {
-  "short_name": "Barcode Scanner",
-  "name": "Barcode Scanner",
-  "description": "A Progressive Web Application (PWA) that scans barcodes of various formats, using the Barcode Detection API.",
+  "short_name": "Sifts",
+  "name": "Sifts - Smart Food Inventory & Tracking",
+  "description": "Sifts - A smart barcode scanner app for tracking food inventory, reducing waste, and discovering recipes.",
   "categories": ["barcode", "scanner", "utilities"],
   "screenshots": [
     {

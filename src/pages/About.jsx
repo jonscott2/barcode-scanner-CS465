@@ -43,7 +43,7 @@ export default function About() {
       <nav className="landing-nav">
         <div className="landing-nav-container">
           <Link to="/" className="landing-nav-logo">
-            Barcode Scanner
+            Sifts
           </Link>
           <div className="landing-nav-links">
             <Link to="/" className="landing-nav-link">
@@ -147,6 +147,23 @@ export default function About() {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* System Architecture Diagram */}
+        <section className="about-section">
+          <h2 className="about-section-title">System Architecture</h2>
+          <div className="architecture-diagram-container">
+            <img 
+              src="/assets/architecture-diagram.svg" 
+              alt="Sifts System Architecture Diagram"
+              className="architecture-diagram"
+              style={{ width: '100%', maxWidth: '1200px', height: 'auto', margin: '0 auto', display: 'block' }}
+            />
+          </div>
+          <p className="about-paragraph" style={{ textAlign: 'center', marginTop: '1rem' }}>
+            This diagram shows how Sifts processes barcode scans, retrieves product information, 
+            stores data, and helps users manage their food inventory to reduce waste.
+          </p>
         </section>
 
         {/* Call to Action with Food Image */}

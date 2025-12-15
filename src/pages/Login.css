@@ -70,6 +70,23 @@
   margin-bottom: 2.5rem;
 }
 
+.auth-back-link {
+  display: inline-block;
+  color: var(--snhu-navy);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  transition: all 0.2s ease;
+  opacity: 0.8;
+}
+
+.auth-back-link:hover {
+  color: var(--snhu-yellow);
+  opacity: 1;
+  text-decoration: underline;
+}
+
 .auth-header h1 {
   font-size: 2.5rem;
   font-weight: 800;
@@ -142,6 +159,68 @@
   color: #495057;
   opacity: 1;
   font-weight: 600;
+}
+
+/* Form Error States */
+.form-group.has-error input {
+  border-color: #dc3545;
+  box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.15);
+}
+
+.form-group.has-error input:focus {
+  border-color: #dc3545;
+  box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.25);
+}
+
+.field-error {
+  display: block;
+  color: #dc3545;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Password Input Wrapper */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  padding-right: 3.5rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #495057;
+  font-size: 1.25rem;
+  transition: color 0.2s ease;
+  z-index: 1;
+}
+
+.password-toggle:hover:not(:disabled) {
+  color: var(--snhu-navy);
+}
+
+.password-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.password-toggle:focus {
+  outline: 2px solid var(--snhu-yellow);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Buttons */
@@ -257,12 +336,7 @@
 /* Ensure text in social buttons is always visible */
 .btn-social {
   letter-spacing: 0.3px;
-}
-
-.btn-social span,
-.btn-social {
-  color: #d4ab05 !important;
-  font-weight: 800 !important;
+  color: #000000;
 }
 
 /* Divider */
@@ -297,6 +371,20 @@
   color: #dc3545;
   font-size: 0.875rem;
   line-height: 1.5;
+}
+
+/* Success Message */
+.success-message {
+  padding: 0.875rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(40, 167, 69, 0.1);
+  border: 1px solid rgba(40, 167, 69, 0.3);
+  border-radius: 8px;
+  color: #28a745;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  text-align: center;
+  font-weight: 600;
 }
 
 /* Footer */

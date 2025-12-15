@@ -121,19 +121,19 @@ async function proxyRequest(targetUrl, method, req, res) {
     // Log upstream response body for debugging and save item title when present.
     try {
       const contentType = fetchRes.headers.get('content-type') || '';
-        if (contentType.toLowerCase().includes('application/json')) {
-          const parsed = JSON.parse(text);
-          console.log('Proxy <- upstream response (JSON):\n' + JSON.stringify(parsed, null, 2));
-          // If the response contains a title field, save it to ingredients.json or per-user store
-          if (parsed && typeof parsed.title === 'string' && parsed.title.trim()) {
-            // Pass the incoming Authorization header so saveTitle can attempt
-            // to verify a Firebase ID token and write per-user data to Firestore.
-            const authHeader = req.headers && req.headers.authorization;
-            saveTitleToIngredients(parsed.title.trim(), authHeader).catch(err =>
-              console.warn('Failed to save title to ingredients store', err)
-            );
-          }
-        } else {
+      if (contentType.toLowerCase().includes('application/json')) {
+        const parsed = JSON.parse(text);
+        console.log('Proxy <- upstream response (JSON):\n' + JSON.stringify(parsed, null, 2));
+        // If the response contains a title field, save it to ingredients.json or per-user store
+        if (parsed && typeof parsed.title === 'string' && parsed.title.trim()) {
+          // Pass the incoming Authorization header so saveTitle can attempt
+          // to verify a Firebase ID token and write per-user data to Firestore.
+          const authHeader = req.headers && req.headers.authorization;
+          saveTitleToIngredients(parsed.title.trim(), authHeader).catch(err =>
+            console.warn('Failed to save title to ingredients store', err)
+          );
+        }
+      } else {
         // Not JSON according to content-type, still try to parse safely
         try {
           const parsed = JSON.parse(text);
@@ -170,14 +170,19 @@ async function saveTitleToIngredients(title, authHeader) {
   // the incoming Authorization header, write a per-user document. Otherwise
   // fall back to writing into the local ingredients JSON file.
   try {
-    if (!firestore && (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+    if (
+      !firestore &&
+      (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS)
+    ) {
       initFirebaseAdmin();
     }
 
     let uid = null;
     if (admin && typeof authHeader === 'string') {
       try {
-        const token = String(authHeader).replace(/^Bearer\s+/i, '').trim();
+        const token = String(authHeader)
+          .replace(/^Bearer\s+/i, '')
+          .trim();
         if (token) {
           const decoded = await admin.auth().verifyIdToken(token);
           uid = decoded && decoded.uid ? decoded.uid : null;
@@ -192,7 +197,10 @@ async function saveTitleToIngredients(title, authHeader) {
     if (uid && firestore) {
       try {
         const ref = firestore.collection('userIngredients').doc(uid).collection('items');
-        await ref.add({ title: String(title), addedAt: admin.firestore.FieldValue.serverTimestamp() });
+        await ref.add({
+          title: String(title),
+          addedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
         console.log(`Saved title to Firestore for uid=${uid}: ${title}`);
         return;
       } catch (e) {
@@ -222,7 +230,15 @@ async function saveTitleToIngredients(title, authHeader) {
           .filter(Boolean);
       } else if (parsed && Array.isArray(parsed.ingredients)) {
         current.ingredients = parsed.ingredients
-          .map(item => (typeof item === 'string' ? { title: item } : { title: item.title || null, userId: item.userId || null, addedAt: item.addedAt || null }))
+          .map(item =>
+            typeof item === 'string'
+              ? { title: item }
+              : {
+                  title: item.title || null,
+                  userId: item.userId || null,
+                  addedAt: item.addedAt || null
+                }
+          )
           .filter(Boolean);
       }
     } catch {
@@ -239,13 +255,17 @@ async function saveTitleToIngredients(title, authHeader) {
       }
     } else {
       // No user id: preserve legacy behavior and store a plain string if it's not already present
-      const hasString = current.ingredients.some(it => typeof it.title === 'string' && Object.keys(it).length === 1 && it.title === title);
+      const hasString = current.ingredients.some(
+        it => typeof it.title === 'string' && Object.keys(it).length === 1 && it.title === title
+      );
       if (!hasString) {
         // We want to preserve the old top-level structure when possible. If the file previously
         // was a simple array of strings we will keep writing a plain array-of-strings inside
         // an object with `ingredients` for backward compatibility.
         let out = { ingredients: [] };
-        out.ingredients = current.ingredients.map(it => (it && it.title ? it.title : null)).filter(Boolean);
+        out.ingredients = current.ingredients
+          .map(it => (it && it.title ? it.title : null))
+          .filter(Boolean);
         out.ingredients.push(title);
         await fs.writeFile(INGREDIENTS_FILE, JSON.stringify(out, null, 2), 'utf8');
         console.log(`Saved title to ingredients.json (anon): ${title}`);
@@ -258,9 +278,330 @@ async function saveTitleToIngredients(title, authHeader) {
   }
 }
 
-// GET /product/:id
-app.get('/product/:id', (req, res) => {
+/**
+ * Unified Product Lookup Pipeline
+ * Cache-first with Firebase, Open Food Facts primary, UPCitemDB fallback
+ */
+
+// Cache TTL: 30 days
+const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Normalize Open Food Facts response to unified Product format
+ */
+function normalizeOpenFoodFacts(data) {
+  if (!data || data.status !== 1 || !data.product) {
+    return null;
+  }
+  const p = data.product;
+  return {
+    name: p.product_name || p.product_name_en || '',
+    brand: p.brands || p.brand || '',
+    image: p.image_url || p.image_front_url || p.image_front_small_url || '',
+    ingredients: p.ingredients_text || p.ingredients_text_en || '',
+    allergens: p.allergens || p.allergens_tags?.join(', ') || '',
+    nutrition: p.nutriments || null,
+    categories: p.categories || p.categories_tags?.join(', ') || '',
+    source: 'Open Food Facts',
+    lastUpdated: new Date().toISOString()
+  };
+}
+
+/**
+ * Normalize UPCitemDB response to unified Product format
+ */
+function normalizeUPCitemDB(data) {
+  if (!data || data.code !== 'OK' || !data.items || data.items.length === 0) {
+    return null;
+  }
+  const item = data.items[0];
+  return {
+    name: item.title || item.description || '',
+    brand: item.brand || '',
+    image: item.images?.[0] || item.image || '',
+    ingredients: item.description || '',
+    allergens: '',
+    nutrition: null,
+    categories: item.category || '',
+    source: 'UPCitemDB',
+    lastUpdated: new Date().toISOString()
+  };
+}
+
+/**
+ * Normalize UPC Database response to unified Product format
+ */
+function normalizeUPCDatabase(data) {
+  if (!data || !data.title) {
+    return null;
+  }
+  return {
+    name: data.title || data.name || '',
+    brand: data.brand || '',
+    image: data.image || data.images?.[0] || '',
+    ingredients: data.metadata?.ingredients || '',
+    allergens: '',
+    nutrition: null,
+    categories: data.categories || data.category || '',
+    source: 'UPC Database',
+    lastUpdated: new Date().toISOString()
+  };
+}
+
+/**
+ * Merge product data, preferring OFF for ingredients/nutrition, UPC for image/title if missing
+ */
+function mergeProducts(primary, fallback) {
+  if (!primary && !fallback) {
+    return null;
+  }
+  if (!primary) {
+    return fallback;
+  }
+  if (!fallback) {
+    return primary;
+  }
+
+  return {
+    name: primary.name || fallback.name || '',
+    brand: primary.brand || fallback.brand || '',
+    image: primary.image || fallback.image || '',
+    ingredients: primary.ingredients || fallback.ingredients || '',
+    allergens: primary.allergens || fallback.allergens || '',
+    nutrition: primary.nutrition || fallback.nutrition || null,
+    categories: primary.categories || fallback.categories || '',
+    source: `${primary.source}${fallback.source ? ` + ${fallback.source}` : ''}`,
+    lastUpdated: new Date().toISOString()
+  };
+}
+
+/**
+ * Check Firebase cache for product
+ */
+async function getCachedProduct(barcode) {
+  if (!firestore) {
+    return null;
+  }
+  try {
+    const doc = await firestore.collection('products').doc(barcode).get();
+    if (!doc.exists) {
+      return null;
+    }
+    const data = doc.data();
+    const lastUpdated = data.lastUpdated ? new Date(data.lastUpdated) : new Date(0);
+    const age = Date.now() - lastUpdated.getTime();
+
+    if (age < CACHE_TTL_MS) {
+      console.log(
+        `Cache hit for barcode ${barcode} (age: ${Math.round(age / (24 * 60 * 60 * 1000))} days)`
+      );
+      return data;
+    }
+    console.log(
+      `Cache expired for barcode ${barcode} (age: ${Math.round(age / (24 * 60 * 60 * 1000))} days)`
+    );
+    return null;
+  } catch (err) {
+    console.warn('Error reading from cache:', err);
+    return null;
+  }
+}
+
+/**
+ * Save product to Firebase cache
+ */
+async function saveProductToCache(barcode, product) {
+  if (!firestore || !product) {
+    return;
+  }
+  try {
+    await firestore
+      .collection('products')
+      .doc(barcode)
+      .set({
+        ...product,
+        barcode: barcode,
+        cachedAt: new Date().toISOString()
+      });
+    console.log(`Cached product for barcode ${barcode}`);
+  } catch (err) {
+    console.warn('Error saving to cache:', err);
+  }
+}
+
+/**
+ * Fetch from Open Food Facts
+ */
+async function fetchOpenFoodFacts(barcode) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const url = `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const data = await res.json();
+    return normalizeOpenFoodFacts(data);
+  } catch (err) {
+    console.warn('Open Food Facts fetch failed:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Fetch from UPCitemDB
+ */
+async function fetchUPCitemDB(barcode) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const url = `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`;
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const data = await res.json();
+    return normalizeUPCitemDB(data);
+  } catch (err) {
+    console.warn('UPCitemDB fetch failed:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Fetch from UPC Database (existing API)
+ */
+async function fetchUPCDatabase(barcode) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const headers = { Accept: 'application/json' };
+    if (API_KEY) {
+      headers['Authorization'] = `Bearer ${API_KEY}`;
+    }
+
+    const url = `${UPC_API_BASE}/product/${encodeURIComponent(barcode)}`;
+    const res = await fetch(url, { headers, signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const data = await res.json();
+    return normalizeUPCDatabase(data);
+  } catch (err) {
+    console.warn('UPC Database fetch failed:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Unified product lookup endpoint
+ * GET /api/products/:barcode or GET /product/:id (backward compatible)
+ */
+async function unifiedProductLookup(barcode, req, res) {
+  const startTime = Date.now();
+
+  try {
+    // Step 1: Check Firebase cache first
+    const cached = await getCachedProduct(barcode);
+    if (cached) {
+      const duration = Date.now() - startTime;
+      console.log(`Unified lookup: Cache hit (${duration}ms)`);
+      return res.json({
+        ok: true,
+        source: 'cache',
+        product: cached,
+        duration: duration
+      });
+    }
+
+    // Step 2: Try Open Food Facts (primary source)
+    console.log('Unified lookup: Fetching from Open Food Facts...');
+    let product = await fetchOpenFoodFacts(barcode);
+    let source = 'Open Food Facts';
+
+    // Step 3: Check if OFF result is complete (has name + image + ingredients)
+    const isComplete = product && product.name && (product.image || product.ingredients);
+
+    if (!isComplete) {
+      // Step 4: Try UPCitemDB as fallback
+      console.log('Unified lookup: OFF incomplete, trying UPCitemDB...');
+      const upcitemdbProduct = await fetchUPCitemDB(barcode);
+
+      if (upcitemdbProduct) {
+        // Merge: prefer OFF for ingredients/nutrition, UPCitemDB for image/title if missing
+        product = mergeProducts(product, upcitemdbProduct);
+        source = product.source || 'UPCitemDB';
+      } else {
+        // Step 5: Try UPC Database as final fallback
+        console.log('Unified lookup: UPCitemDB failed, trying UPC Database...');
+        const upcProduct = await fetchUPCDatabase(barcode);
+        if (upcProduct) {
+          product = mergeProducts(product, upcProduct);
+          source = product.source || 'UPC Database';
+        }
+      }
+    }
+
+    const duration = Date.now() - startTime;
+
+    if (!product || !product.name) {
+      console.log(`Unified lookup: Not found (${duration}ms)`);
+      return res.json({
+        ok: false,
+        reason: 'not_found',
+        message: 'Product not found in any database',
+        duration: duration
+      });
+    }
+
+    // Step 6: Save to cache
+    await saveProductToCache(barcode, product);
+
+    console.log(`Unified lookup: Success via ${source} (${duration}ms)`);
+    return res.json({
+      ok: true,
+      source: source,
+      product: product,
+      duration: duration
+    });
+  } catch (err) {
+    const duration = Date.now() - startTime;
+    console.error('Unified lookup error:', err);
+    return res.status(500).json({
+      ok: false,
+      reason: 'error',
+      message: err.message || 'Internal server error',
+      duration: duration
+    });
+  }
+}
+
+// GET /product/:id (backward compatible - now uses unified lookup)
+app.get('/product/:id', async (req, res) => {
   const id = req.params.id;
+
+  // Use unified lookup if barcode is valid (8-14 digits)
+  if (/^[0-9]{8,14}$/.test(id)) {
+    return unifiedProductLookup(id, req, res);
+  }
+
+  // Fallback to old proxy for non-barcode requests
   const target = `${UPC_API_BASE}/product/${encodeURIComponent(id)}`;
   return proxyRequest(target, 'GET', req, res);
 });
@@ -295,14 +636,19 @@ app.get('/user/ingredients', async (req, res) => {
   const authHeader = req.headers && req.headers.authorization;
 
   // Try to initialize firebase-admin if credentials are present but not yet initialized
-  if (!admin && (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+  if (
+    !admin &&
+    (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS)
+  ) {
     initFirebaseAdmin();
   }
 
   if (admin && firestore) {
     if (!authHeader) return res.status(401).json({ error: 'missing_authorization' });
     try {
-      const token = String(authHeader).replace(/^Bearer\s+/i, '').trim();
+      const token = String(authHeader)
+        .replace(/^Bearer\s+/i, '')
+        .trim();
       const decoded = await admin.auth().verifyIdToken(token);
       const uid = decoded && decoded.uid;
       if (!uid) return res.status(401).json({ error: 'invalid_token' });
@@ -332,7 +678,9 @@ app.get('/user/ingredients', async (req, res) => {
     if (Array.isArray(parsed)) {
       // If array of objects with userId, attempt to filter by token
       if (!authHeader) return res.status(400).json({ error: 'firestore_not_configured_no_auth' });
-      const token = String(authHeader).replace(/^Bearer\s+/i, '').trim();
+      const token = String(authHeader)
+        .replace(/^Bearer\s+/i, '')
+        .trim();
       let uid = null;
       try {
         if (!admin) initFirebaseAdmin();

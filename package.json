@@ -38,11 +38,14 @@
     "start:proxy": "node server/proxy.js",
     "build:parcel": "parcel build --dist-dir=dist --public-url=./",
     "build": "npm-run-all clean build:parcel",
-    "postbuild": "npm run generateSW",
+    "postbuild": "npm run generateSW && node fix-favicon.js",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
     "deploy:firebase": "firebase deploy --only hosting",
-    "deploy:firebase:all": "firebase deploy"
+    "deploy:firebase:all": "firebase deploy",
+    "deploy:vercel": "vercel --prod",
+    "deploy:netlify": "netlify deploy --prod --dir=dist",
+    "deploy:gh-pages": "npm run build && gh-pages -d dist"
   },
   "repository": {
     "type": "git",

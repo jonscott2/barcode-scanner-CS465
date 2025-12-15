@@ -145,7 +145,18 @@ const styles = /* css */ `
 
   ul li small {
     font-size: 0.85em;
-    opacity: 0.7;
+    opacity: 0.9;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .history-countdown {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    font-weight: 600;
+    white-space: nowrap;
+    min-width: 120px;
+    text-align: right;
   }
 
   .history-item-clickable {
