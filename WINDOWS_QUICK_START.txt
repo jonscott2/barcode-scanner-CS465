@@ -1,0 +1,67 @@
+================================================================================
+  WINDOWS QUICK START GUIDE - Barcode Scanner Project
+================================================================================
+
+STEP 1: INSTALL NODE.JS
+------------------------
+1. Go to: https://nodejs.org/
+2. Download and install the LTS version
+3. Make sure "Add to PATH" is checked during installation
+4. Restart your computer after installation
+
+STEP 2: CLONE THE PROJECT
+--------------------------
+Open Command Prompt and run:
+  git clone https://github.com/jonscott2/barcode-scanner-CS465.git
+  cd barcode-scanner-CS465
+
+STEP 3: INSTALL DEPENDENCIES
+-----------------------------
+In Command Prompt, run:
+  npm install
+
+STEP 4: START THE API SERVERS
+------------------------------
+Double-click this file: start-all-apis.bat
+
+OR manually run in Command Prompt:
+  set UPC_API_KEY=4190D3F1E6057DD921DA7E426A79AAF3
+  start cmd /k "npm run start:proxy"
+  
+  set UPC_API_KEY2=6da1ac7558c34c9d9c314d1172952a6a
+  start cmd /k "node server/RecipeDB.js"
+
+STEP 5: START THE REACT APP
+----------------------------
+Open a NEW Command Prompt window and run:
+  cd path\to\barcode-scanner-CS465
+  npm start
+
+STEP 6: OPEN THE APP
+--------------------
+Open your web browser and go to:
+  http://localhost:3002
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Problem: "node is not recognized"
+Solution: Reinstall Node.js and restart your computer
+
+Problem: "npm is not recognized"  
+Solution: Same as above - reinstall Node.js
+
+Problem: Port already in use
+Solution: Close any existing server windows, then try again
+
+Problem: Can't find modules
+Solution: Run "npm install" again in the project folder
+
+================================================================================
+NEED MORE HELP?
+================================================================================
+See WINDOWS_SETUP.md for detailed instructions and troubleshooting
+
+================================================================================
+

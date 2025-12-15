@@ -20,9 +20,25 @@ The project aims to address the significant issue of food waste in the U.S., whe
 
 **How to start:**
 
+## 🪟 Windows Users - Quick Start
+
+**For detailed Windows setup instructions, see [WINDOWS_SETUP.md](WINDOWS_SETUP.md)**
+
+**Easiest method for Windows:**
+1. Install Node.js from https://nodejs.org/
+2. Open Command Prompt in the project folder
+3. Run: `npm install`
+4. Double-click `start-all-apis.bat` (starts both API servers)
+5. In a new Command Prompt, run: `npm start`
+6. Open browser to `http://localhost:3002`
+
+---
+
+## 📋 Detailed Setup Instructions
+
 You need to start two API's and one react component
 
-**API 1 - UPC Database Proxy (Required for barcode scanning):**
+### **API 1 - UPC Database Proxy (Required for barcode scanning):**
 
 **On Mac/Linux:**
 ```bash
@@ -43,23 +59,31 @@ npm run start:proxy
 ```
 
 **Or use the setup script:**
-- Mac/Linux: `source setup-api.sh` then `npm run start:proxy`
-- Windows: Run `setup-api.bat` then `npm run start:proxy`
+- Mac/Linux: `./start-all-apis.sh` (starts both APIs)
+- Windows: Double-click `start-all-apis.bat` (starts both APIs)
 
-**API 2 - Recipe API (Optional):**
+### **API 2 - Recipe API (Optional):**
 
 In a new terminal, cd into server and run:
 ```bash
 # Mac/Linux
-export UPC_API_KEY2="fca61d79d6054c04943fdfbf80b32256"
+export UPC_API_KEY2="6da1ac7558c34c9d9c314d1172952a6a"
+# OR
+export SPOONACULAR_API_KEY="6da1ac7558c34c9d9c314d1172952a6a"
 node server/RecipeDB.js
 
 # Windows PowerShell
-$env:UPC_API_KEY2="fca61d79d6054c04943fdfbf80b32256"
+$env:UPC_API_KEY2="6da1ac7558c34c9d9c314d1172952a6a"
+# OR
+$env:SPOONACULAR_API_KEY="6da1ac7558c34c9d9c314d1172952a6a"
+node server/RecipeDB.js
+
+# Windows CMD
+set UPC_API_KEY2=6da1ac7558c34c9d9c314d1172952a6a
 node server/RecipeDB.js
 ```
 
-**React Component:**
+### **React Component:**
 
 In the main project folder:
 ```bash
