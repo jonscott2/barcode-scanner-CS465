@@ -303,7 +303,7 @@ export async function findProductImage(productName, brand = '', existingImage = 
  * @param {string} url - Image URL to validate
  * @returns {Promise<boolean>} True if image is accessible
  */
-async function validateImageUrl(url) {
+export async function validateImageUrl(url) {
   if (!url || !url.startsWith('http')) {
     return false;
   }
@@ -385,4 +385,6 @@ export async function findMultipleProductImages(productName, brand = '', count =
 
   return images.slice(0, count);
 }
+
+
 

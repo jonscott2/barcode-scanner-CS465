@@ -105,9 +105,12 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
     // Return early - the scanner will be reinitialized when elements are available
     return;
   }
-  const SCAN_RATE_LIMIT = 1000;
+  // Reduced scan rate for faster, more responsive barcode detection
+  const SCAN_RATE_LIMIT = 200; // Reduced from 1000ms to 200ms for much faster detection
   let scanTimeoutId = null;
+  let scanAnimationFrameId = null;
   let shouldScan = true;
+  let isScanning = false;
 
   // By default the dialog elements are hidden for browsers that don't support the dialog element.
   // If the dialog element is supported, we remove the hidden attribute and the dialogs' visibility
@@ -1041,7 +1044,8 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
   }
 
   const videoCaptureShadowRoot = videoCaptureEl?.shadowRoot;
-  const videoCaptureVideoEl = videoCaptureShadowRoot?.querySelector('video');
+  // Make video element reference dynamic so it can be updated when video starts
+  let videoCaptureVideoEl = videoCaptureShadowRoot?.querySelector('video');
   const videoCaptureActionsEl = videoCaptureShadowRoot?.querySelector('[part="actions-container"]');
 
   dropzoneEl.accept = ACCEPTED_MIME_TYPES.join(',');
@@ -1056,12 +1060,22 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
    * @returns {Promise<void>} - A Promise that resolves when the barcode is detected.
    */
   async function scan() {
-    if (!shouldScan) {
+    if (!shouldScan || isScanning) {
       return;
     }
 
-    log.info('Scanning...');
+    // Ensure video element is available
+    if (!videoCaptureVideoEl) {
+      const shadowRoot = videoCaptureEl?.shadowRoot;
+      videoCaptureVideoEl = shadowRoot?.querySelector('video');
+      if (!videoCaptureVideoEl) {
+        // Video not ready yet, retry after a short delay
+        scanTimeoutId = setTimeout(() => scan(), 100);
+        return;
+      }
+    }
 
+    isScanning = true;
     scanInstructionsEl?.removeAttribute('hidden');
 
     try {
@@ -1072,6 +1086,17 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
 
       if (!barcodeValue) {
         throw new Error('No barcode detected');
+      }
+
+      // Stop scanning immediately when barcode is detected
+      isScanning = false;
+      if (scanTimeoutId) {
+        clearTimeout(scanTimeoutId);
+        scanTimeoutId = null;
+      }
+      if (scanAnimationFrameId) {
+        cancelAnimationFrame(scanAnimationFrameId);
+        scanAnimationFrameId = null;
       }
 
       if (cameraResultsEl) {
@@ -1132,23 +1157,43 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
         })
       );
 
-      if (!settings?.continueScanning) {
-        if (scanTimeoutId) {
-          clearTimeout(scanTimeoutId);
-          scanTimeoutId = null;
-        }
+      // If continue scanning is enabled, resume after a brief delay
+      if (settings?.continueScanning) {
+        // Wait a bit before resuming to avoid re-detecting the same barcode
+        setTimeout(() => {
+          isScanning = false;
+          // Clear previous results to allow fresh scan
+          if (cameraResultsEl) {
+            cameraResultsEl.innerHTML = '';
+          }
+          // Ensure scan frame and actions are visible
+          scanFrameEl?.removeAttribute('hidden');
+          videoCaptureActionsEl?.removeAttribute('hidden');
+          if (shouldScan) {
+            scan();
+          }
+        }, 1000); // 1 second delay before resuming
+      } else {
+        // Reset state for next scan
+        isScanning = false;
+        shouldScan = false;
         scanBtn?.removeAttribute('hidden');
         scanFrameEl?.setAttribute('hidden', '');
         videoCaptureActionsEl?.setAttribute('hidden', '');
-        return;
       }
+      return;
     } catch {
       // If no barcode is detected, the error is caught here.
       // We can ignore the error and continue scanning.
+      isScanning = false;
     }
 
+    // Continue scanning with optimized timing
     if (shouldScan) {
-      scanTimeoutId = setTimeout(() => scan(), SCAN_RATE_LIMIT);
+      // Use requestAnimationFrame for smoother, more responsive detection
+      scanAnimationFrameId = requestAnimationFrame(() => {
+        scanTimeoutId = setTimeout(() => scan(), SCAN_RATE_LIMIT);
+      });
     }
   }
 
@@ -1157,10 +1202,38 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
    * It is responsible for clearing previous results and starting the scan process again.
    */
   function handleScanButtonClick() {
+    console.log('Scan button clicked - resetting state and starting scan');
+    
+    // Clear any existing scan timeouts/frames
+    if (scanTimeoutId) {
+      clearTimeout(scanTimeoutId);
+      scanTimeoutId = null;
+    }
+    if (scanAnimationFrameId) {
+      cancelAnimationFrame(scanAnimationFrameId);
+      scanAnimationFrameId = null;
+    }
+    
+    // Reset all scan state
+    isScanning = false;
+    shouldScan = true;
+    
+    // Hide scan button and show scan UI
     scanBtn?.setAttribute('hidden', '');
     scanFrameEl?.removeAttribute('hidden');
     videoCaptureActionsEl?.removeAttribute('hidden');
-    // hideResult(cameraPanel);
+    scanInstructionsEl?.removeAttribute('hidden');
+    
+    // Clear previous results for a fresh scan
+    if (cameraResultsEl) {
+      cameraResultsEl.innerHTML = '';
+    }
+    
+    // Ensure video element is available
+    const shadowRoot = videoCaptureEl?.shadowRoot;
+    videoCaptureVideoEl = shadowRoot?.querySelector('video');
+    
+    // Start scanning immediately
     scan();
   }
 
@@ -1175,15 +1248,27 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
     const videoCaptureEl = document.querySelector('video-capture'); // Get the latest instance of video-capture element to ensure we don't use the cached one.
 
     if (tabId === 'cameraTab') {
+      // Clear any existing scan operations
+      if (scanTimeoutId) {
+        clearTimeout(scanTimeoutId);
+        scanTimeoutId = null;
+      }
+      if (scanAnimationFrameId) {
+        cancelAnimationFrame(scanAnimationFrameId);
+        scanAnimationFrameId = null;
+      }
+      
       shouldScan = true;
+      isScanning = false;
 
       if (!videoCaptureEl) {
         return;
       }
 
-      if (!videoCaptureEl.loading && scanBtn.hasAttribute('hidden')) {
+      if (!videoCaptureEl.loading && scanBtn?.hasAttribute('hidden')) {
         scanFrameEl?.removeAttribute('hidden');
         videoCaptureActionsEl?.removeAttribute('hidden');
+        // Start scanning immediately when tab is shown
         scan();
       }
 
@@ -1192,7 +1277,18 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
         videoCaptureEl.startVideoStream(videoDeviceId);
       }
     } else if (tabId === 'fileTab') {
+      // Stop scanning when switching to file tab
       shouldScan = false;
+      isScanning = false;
+      
+      if (scanTimeoutId) {
+        clearTimeout(scanTimeoutId);
+        scanTimeoutId = null;
+      }
+      if (scanAnimationFrameId) {
+        cancelAnimationFrame(scanAnimationFrameId);
+        scanAnimationFrameId = null;
+      }
 
       if (videoCaptureEl != null && typeof videoCaptureEl.stopVideoStream === 'function') {
         videoCaptureEl.stopVideoStream();
@@ -1352,7 +1448,16 @@ import { isFirebaseConfigured, initFirebaseRuntime } from './services/firebase-c
   async function handleVideoCapturePlay(evt) {
     scanFrameEl?.removeAttribute('hidden');
     resizeScanFrame(evt.detail.video, scanFrameEl);
-    scan();
+    
+    // Ensure video element is available for scanning
+    if (!videoCaptureVideoEl && evt.detail.video) {
+      videoCaptureVideoEl = evt.detail.video;
+    }
+    
+    // Start scanning immediately when video starts playing
+    if (shouldScan && !isScanning) {
+      scan();
+    }
 
     const trackSettings = evt.target.getTrackSettings();
     const trackCapabilities = evt.target.getTrackCapabilities();

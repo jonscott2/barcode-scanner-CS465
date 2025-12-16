@@ -163,7 +163,12 @@ export default function Scanner() {
         const cameraTab = document.querySelector('#cameraTab');
         const tabGroupEl = document.querySelector('a-tab-group');
         const cameraSelect = document.getElementById('cameraSelect');
-        const refreshCameraBtn = document.getElementById('refreshCameraList');
+        // Try to find refresh button - it might be in shadow DOM or regular DOM
+        let refreshCameraBtn = document.getElementById('refreshCameraList');
+        // If not found, try querying in shadow root
+        if (!refreshCameraBtn && videoCaptureEl?.shadowRoot) {
+          refreshCameraBtn = videoCaptureEl.shadowRoot.getElementById('refreshCameraList');
+        }
 
         // Listen for tab changes to start camera when camera tab is selected
         if (tabGroupEl) {
@@ -217,6 +222,14 @@ export default function Scanner() {
         const populateCameraList = async () => {
           if (!cameraSelect) return;
 
+          // Show loading state on button
+          const originalText = refreshCameraBtn?.textContent || 'Refresh Cameras';
+          if (refreshCameraBtn) {
+            refreshCameraBtn.disabled = true;
+            refreshCameraBtn.textContent = 'Refreshing...';
+            refreshCameraBtn.style.opacity = '0.6';
+          }
+
           try {
             // Request camera permission first (needed to get device labels)
             try {
@@ -248,21 +261,77 @@ export default function Scanner() {
             // Always show the dropdown (remove hidden attribute if present)
             cameraSelect?.removeAttribute('hidden');
 
-            // If there are cameras, select the first one
-            if (videoInputDevices.length > 0 && !cameraSelect.value) {
-              cameraSelect.value = videoInputDevices[0].deviceId;
+            // If there are cameras, select the first one if none selected
+            if (videoInputDevices.length > 0) {
+              if (!cameraSelect.value || !Array.from(cameraSelect.options).some(opt => opt.value === cameraSelect.value)) {
+                cameraSelect.value = videoInputDevices[0].deviceId;
+              }
+              
+              // Restart camera with selected device if camera is already running
+              if (videoCaptureEl && typeof videoCaptureEl.startVideoStream === 'function') {
+                const currentStream = videoCaptureEl.shadowRoot?.querySelector('video')?.srcObject;
+                if (currentStream) {
+                  // Camera is running, restart with selected camera
+                  const selectedDeviceId = cameraSelect.value;
+                  console.log('Restarting camera with device:', selectedDeviceId);
+                  videoCaptureEl.restartVideoStream(selectedDeviceId);
+                }
+              }
+            } else {
+              console.warn('No cameras found');
             }
           } catch (err) {
-            console.warn('Error populating camera list:', err);
+            console.error('Error populating camera list:', err);
+            // Show error feedback
+            if (refreshCameraBtn) {
+              refreshCameraBtn.textContent = 'Error - Click to retry';
+              refreshCameraBtn.style.background = 'var(--error-color, #dc3545)';
+              setTimeout(() => {
+                if (refreshCameraBtn) {
+                  refreshCameraBtn.textContent = originalText;
+                  refreshCameraBtn.style.background = '';
+                }
+              }, 2000);
+            }
+          } finally {
+            // Restore button state
+            if (refreshCameraBtn) {
+              refreshCameraBtn.disabled = false;
+              refreshCameraBtn.textContent = originalText;
+              refreshCameraBtn.style.opacity = '1';
+            }
           }
         };
 
         // Populate camera list immediately (will work better after permission is granted)
         populateCameraList();
 
-        // Add refresh button handler
+        // Add refresh button handler with proper event handling
+        // Use a named function so we can remove it if needed
+        const handleRefreshClick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          populateCameraList();
+        };
+
         if (refreshCameraBtn) {
-          refreshCameraBtn.addEventListener('click', populateCameraList);
+          // Remove any existing listener to prevent duplicates
+          refreshCameraBtn.removeEventListener('click', handleRefreshClick);
+          refreshCameraBtn.addEventListener('click', handleRefreshClick);
+          console.log('Refresh camera button handler attached');
+        } else {
+          console.warn('Refresh camera button not found, will retry...');
+          // Retry finding the button after a delay (in case React hasn't rendered it yet)
+          setTimeout(() => {
+            const retryBtn = document.getElementById('refreshCameraList');
+            if (retryBtn) {
+              retryBtn.removeEventListener('click', handleRefreshClick);
+              retryBtn.addEventListener('click', handleRefreshClick);
+              console.log('Refresh camera button handler attached on retry');
+            } else {
+              console.error('Refresh camera button still not found after retry');
+            }
+          }, 500);
         }
 
         // Check if camera tab is selected (it should be by default)

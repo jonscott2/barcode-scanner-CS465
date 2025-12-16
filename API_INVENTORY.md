@@ -339,3 +339,4 @@ Your app integrates **10+ APIs** across product lookup, recipes, images, and aut
 3. **Get Spoonacular Key** - Essential for recipe features
 4. **Optional:** Unsplash/Pixabay keys for more image options
 
+

@@ -212,3 +212,4 @@ For issues:
 
 Visit: https://barcode-scanner-cs465.web.app
 
+

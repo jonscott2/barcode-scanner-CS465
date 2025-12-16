@@ -47,3 +47,4 @@ Your Search Engine ID will be something like:
 
 After adding the Engine ID, restart your app and scan a barcode. Images should load much faster! 🚀
 
+

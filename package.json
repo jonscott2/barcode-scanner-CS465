@@ -95,6 +95,7 @@
     "@georapbox/modal-element": "~1.9.0",
     "@georapbox/resize-observer-element": "~2.0.1",
     "@georapbox/web-share-element": "~3.1.1",
+    "@sentry/react": "~10.30.0",
     "barcode-detector": "~3.0.4",
     "firebase": "~12.6.0",
     "firebase-admin": "~13.6.0",

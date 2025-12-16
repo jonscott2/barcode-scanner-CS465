@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthProvider.jsx';
+import { getAuth } from 'firebase/auth';
 import './Login.css';
 
 export default function Login() {
@@ -82,11 +83,29 @@ export default function Login() {
         setLoading(false);
       } else if (result?.user) {
         console.log('Login successful, user:', result.user);
-        // Mark login as successful - navigation will happen via useEffect when auth state updates
-        setSuccess(true);
+        // Mark login as successful FIRST - before any navigation
         setLoginSuccess(true);
-        // Don't navigate here - wait for auth state to update via onAuthStateChange
-        // The useEffect below will handle navigation once authState becomes 'authenticated'
+        setSuccess(true);
+        setLoading(false);
+        
+        // CRITICAL: Use window.location.hash for HashRouter - this is the most reliable method
+        // React Router navigate() may not work immediately with HashRouter after auth state change
+        console.log('Navigating to home after successful login using window.location.hash');
+        
+        // Immediate navigation using HashRouter's native method
+        window.location.hash = '#/app/home';
+        
+        // Also try React Router navigation as backup
+        navigate('/app/home', { replace: true });
+        
+        // Final backup - force navigation after short delay if still on login page
+        setTimeout(() => {
+          const currentPath = window.location.hash.replace('#', '') || window.location.pathname;
+          if (currentPath === '/login' || currentPath === '/') {
+            console.log('Backup: Force navigation to home');
+            window.location.hash = '#/app/home';
+          }
+        }, 200);
       } else {
         console.warn('Login result has no error but no user either:', result);
         setErrors({ ...newErrors, general: 'An unexpected error occurred. Please try again.' });
@@ -128,23 +147,90 @@ export default function Login() {
     if (errors.general) setErrors(prev => ({ ...prev, general: '' }));
   };
 
+  // Track if user intentionally navigated to login page (not from auto-redirect)
+  const mountedRef = useRef(false);
+  const intentionalNavigationRef = useRef(true);
+
+  // Set flag on mount to track if this is an intentional navigation
+  // Also clear form state to prevent autofill from triggering unwanted behavior
+  useEffect(() => {
+    // Don't clear state if login was just successful - let navigation happen
+    if (loginSuccess) {
+      return; // Don't interfere with successful login flow
+    }
+    
+    // Clear form state on mount to prevent autofill issues
+    setEmail('');
+    setPassword('');
+    setErrors({ email: '', password: '', general: '' });
+    setLoading(false);
+    setSuccess(false);
+    
+    // Check if user came from navigation (not page reload)
+    const navigationType = window.performance?.getEntriesByType?.('navigation')?.[0]?.type;
+    const isPageReload = navigationType === 'reload' || navigationType === 'back_forward';
+    
+    // If it's a page reload, don't auto-redirect immediately
+    // Give user a chance to see the login page and enter credentials manually
+    if (isPageReload) {
+      intentionalNavigationRef.current = false;
+      // Reset after a delay to allow intentional navigation check
+      // This prevents immediate redirect on page reload
+      setTimeout(() => {
+        intentionalNavigationRef.current = true;
+      }, 1500);
+    }
+    
+    mountedRef.current = true;
+    
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Navigate to home when auth state becomes authenticated after successful login
+  // This is a backup in case the immediate navigation in handleSubmit didn't work
   useEffect(() => {
     if (loginSuccess && (user || authState === 'authenticated')) {
-      console.log('Auth state updated, navigating to home...');
-      // Small delay to ensure state is fully propagated
-      const timer = setTimeout(() => {
+      console.log('Auth state updated after login, ensuring navigation to HomePage...');
+      // Check current location - use window.location for HashRouter
+      const currentPath = window.location.hash.replace('#', '') || window.location.pathname;
+      if (currentPath !== '/app/home' && currentPath !== '/login') {
+        // Only navigate if we're still on login page
         navigate('/app/home', { replace: true });
-      }, 100);
-      return () => clearTimeout(timer);
+      }
     }
   }, [loginSuccess, user, authState, navigate]);
 
   // Also handle case where user is already authenticated (e.g., from another tab)
+  // BUT only redirect if it's an intentional navigation, not a page reload with autofill
   useEffect(() => {
-    if (!loginSuccess && (user || authState === 'authenticated')) {
-      // User is already logged in, redirect to home
-      navigate('/app/home', { replace: true });
+    // Don't redirect if:
+    // 1. User just successfully logged in (handled by first useEffect)
+    // 2. Component just mounted from a page reload (give user time to see login page)
+    // 3. User hasn't intentionally navigated here
+    if (loginSuccess) {
+      return; // Already handled by first useEffect
+    }
+
+    if (user || authState === 'authenticated') {
+      // Only redirect if:
+      // - User intentionally navigated to login page (not a reload)
+      // - OR enough time has passed since mount (user had chance to see page)
+      if (intentionalNavigationRef.current && mountedRef.current) {
+        console.log('User already authenticated, redirecting to home...');
+        navigate('/app/home', { replace: true });
+      } else {
+        // User is authenticated but this might be from a page reload
+        // Wait a bit before redirecting to give user a chance
+        const timer = setTimeout(() => {
+          if (mountedRef.current && (user || authState === 'authenticated') && !loginSuccess) {
+            console.log('Delayed redirect for authenticated user after page reload');
+            navigate('/app/home', { replace: true });
+          }
+        }, 2000); // 2 second delay to allow user to see login page
+        return () => clearTimeout(timer);
+      }
     }
   }, [user, authState, navigate, loginSuccess]);
 
@@ -162,7 +248,18 @@ export default function Login() {
               <p>Sign in to continue</p>
             </div>
 
-            <form onSubmit={handleSubmit} className="auth-form" noValidate>
+            <form 
+              onSubmit={handleSubmit} 
+              className="auth-form" 
+              noValidate
+              autoComplete="off"
+              onKeyDown={(e) => {
+                // Prevent form submission on Enter if form is not ready
+                if (e.key === 'Enter' && (loading || !email.trim() || !password)) {
+                  e.preventDefault();
+                }
+              }}
+            >
               <div className={`form-group ${errors.email ? 'has-error' : ''}`}>
                 <label htmlFor="email">Email</label>
                 <input
@@ -171,6 +268,8 @@ export default function Login() {
                   value={email}
                   onChange={handleEmailChange}
                   autoComplete="email"
+                  data-lpignore="true"
+                  data-form-type="other"
                   placeholder="Enter your email"
                   disabled={loading}
                   aria-invalid={!!errors.email}
@@ -192,6 +291,8 @@ export default function Login() {
                     value={password}
                     onChange={handlePasswordChange}
                     autoComplete="current-password"
+                    data-lpignore="true"
+                    data-form-type="other"
                     placeholder="Enter your password"
                     disabled={loading}
                     aria-invalid={!!errors.password}

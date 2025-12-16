@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthProvider.jsx';
 import { getUserScans } from './js/services/firebase-scans.js';
+import * as Sentry from '@sentry/react';
 import './css/main.css';
 
 // Format time ago - moved outside component to prevent re-creation on every render
@@ -266,6 +267,45 @@ export default function HomePage() {
       <div className="keyboard-hint">
         <kbd>S</kbd> to scan • <kbd>Esc</kbd> to cancel
       </div>
+
+      {/* Sentry Test Button - Remove in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          zIndex: 1000
+        }}>
+          <button
+            onClick={() => {
+              throw new Error('This is your first error!');
+            }}
+            style={{
+              padding: '0.75rem 1.5rem',
+              backgroundColor: '#dc3545',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#c82333';
+              e.target.style.transform = 'scale(1.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#dc3545';
+              e.target.style.transform = 'scale(1)';
+            }}
+            title="Test Sentry Error Tracking"
+          >
+            🧪 Test Sentry
+          </button>
+        </div>
+      )}
 
       {/* Page Header */}
       <div className="dashboard-header">

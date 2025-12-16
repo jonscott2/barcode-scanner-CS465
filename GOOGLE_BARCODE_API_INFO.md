@@ -90,3 +90,4 @@ For product **information** (name, brand, description), stick with:
 
 **Bottom line**: Google doesn't have a product lookup API like your UPC Database proxy. Your current setup is actually better! 🎉
 
+

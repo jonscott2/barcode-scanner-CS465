@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthProvider.jsx';
 import './Login.css';
@@ -11,13 +11,22 @@ export default function Signup() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState({ email: '', password: '', confirmPassword: '', general: '' });
+  const [errors, setErrors] = useState({
+    email: '',
+    password: '',
+    confirmPassword: '',
+    general: ''
+  });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
 
+  // Track if user intentionally navigated to signup page (not from auto-redirect)
+  const mountedRef = useRef(false);
+  const intentionalNavigationRef = useRef(true);
+
   // Validate email format
-  const validateEmail = (email) => {
+  const validateEmail = email => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
@@ -69,13 +78,22 @@ export default function Signup() {
         // Handle specific Firebase errors with user-friendly messages
         const errorCode = result.error.code || '';
         if (errorCode.includes('email-already-in-use')) {
-          setErrors({ ...newErrors, email: 'This email is already registered. Try signing in instead.' });
+          setErrors({
+            ...newErrors,
+            email: 'This email is already registered. Try signing in instead.'
+          });
         } else if (errorCode.includes('weak-password')) {
-          setErrors({ ...newErrors, password: 'Password is too weak. Please choose a stronger password.' });
+          setErrors({
+            ...newErrors,
+            password: 'Password is too weak. Please choose a stronger password.'
+          });
         } else if (errorCode.includes('invalid-email')) {
           setErrors({ ...newErrors, email: 'Please enter a valid email address.' });
         } else {
-          setErrors({ ...newErrors, general: result.error.message || 'Failed to create account. Please try again.' });
+          setErrors({
+            ...newErrors,
+            general: result.error.message || 'Failed to create account. Please try again.'
+          });
         }
         setLoading(false);
       } else if (result && !result.error) {
@@ -83,68 +101,157 @@ export default function Signup() {
         console.log('Account created successfully:', result.user);
         setSuccess(true);
         setSignupSuccess(true);
-        // Don't navigate here - wait for auth state to update via onAuthStateChange
-        // The useEffect below will handle navigation once authState becomes 'authenticated'
+        setLoading(false);
+
+        // CRITICAL: Use window.location.hash for HashRouter - this is the most reliable method
+        console.log('Navigating to home after successful signup using window.location.hash');
+
+        // Immediate navigation using HashRouter's native method
+        window.location.hash = '#/app/home';
+
+        // Also try React Router navigation as backup
+        navigate('/app/home', { replace: true });
+
+        // Final backup - force navigation after short delay if still on signup page
+        setTimeout(() => {
+          const currentPath = window.location.hash.replace('#', '') || window.location.pathname;
+          if (currentPath === '/signup' || currentPath === '/') {
+            console.log('Backup: Force navigation to home');
+            window.location.hash = '#/app/home';
+          }
+        }, 200);
       } else {
         setErrors({ ...newErrors, general: 'An unexpected error occurred. Please try again.' });
         setLoading(false);
       }
     } catch (err) {
       console.error('Signup error:', err);
-      setErrors({ ...newErrors, general: err.message || 'An unexpected error occurred. Please try again.' });
+      setErrors({
+        ...newErrors,
+        general: err.message || 'An unexpected error occurred. Please try again.'
+      });
       setLoading(false);
     }
   };
 
-  // Navigate to home when auth state becomes authenticated after successful signup
+  // Set flag on mount to track if this is an intentional navigation
+  // Also clear form state to prevent autofill from triggering unwanted behavior
+  useEffect(() => {
+    // Clear form state on mount to prevent autofill issues
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setDisplayName('');
+    setErrors({ email: '', password: '', confirmPassword: '', general: '' });
+    setLoading(false);
+    setSuccess(false);
+    setSignupSuccess(false);
+
+    // Check if user came from navigation (not page reload)
+    const navigationType = window.performance?.getEntriesByType?.('navigation')?.[0]?.type;
+    const isPageReload = navigationType === 'reload' || navigationType === 'back_forward';
+
+    // If it's a page reload, don't auto-redirect immediately
+    // Give user a chance to see the signup page and enter credentials manually
+    if (isPageReload) {
+      intentionalNavigationRef.current = false;
+      // Reset after a delay to allow intentional navigation check
+      // This prevents immediate redirect on page reload
+      setTimeout(() => {
+        intentionalNavigationRef.current = true;
+      }, 1500);
+    }
+
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Navigate to HomePage immediately when auth state becomes authenticated after successful signup
+  // This is a backup in case the immediate navigation in handleSubmit didn't work
   useEffect(() => {
     if (signupSuccess && (user || authState === 'authenticated')) {
-      console.log('Auth state updated after signup, navigating to home...');
-      // Small delay to ensure state is fully propagated
-      const timer = setTimeout(() => {
+      console.log('Auth state updated after signup, ensuring navigation to HomePage...');
+      // Double-check we're not already on home page
+      if (window.location.hash !== '#/app/home') {
         navigate('/app/home', { replace: true });
-      }, 100);
-      return () => clearTimeout(timer);
+      }
     }
   }, [signupSuccess, user, authState, navigate]);
 
   // Also handle case where user is already authenticated (e.g., from another tab)
+  // BUT only redirect if it's an intentional navigation, not a page reload with autofill
   useEffect(() => {
-    if (!signupSuccess && (user || authState === 'authenticated')) {
-      // User is already logged in, redirect to home
-      navigate('/app/home', { replace: true });
+    // Don't redirect if:
+    // 1. User just successfully signed up (handled by first useEffect)
+    // 2. Component just mounted from a page reload (give user time to see signup page)
+    // 3. User hasn't intentionally navigated here
+    if (signupSuccess) {
+      return; // Already handled by first useEffect
+    }
+
+    if (user || authState === 'authenticated') {
+      // Only redirect if:
+      // - User intentionally navigated to signup page (not a reload)
+      // - OR enough time has passed since mount (user had chance to see page)
+      if (intentionalNavigationRef.current && mountedRef.current) {
+        console.log('User already authenticated, redirecting to HomePage...');
+        navigate('/app/home', { replace: true });
+      } else {
+        // User is authenticated but this might be from a page reload
+        // Wait a bit before redirecting to give user a chance
+        const timer = setTimeout(() => {
+          if (mountedRef.current && (user || authState === 'authenticated') && !signupSuccess) {
+            console.log('Delayed redirect for authenticated user after page reload');
+            navigate('/app/home', { replace: true });
+          }
+        }, 2000); // 2 second delay to allow user to see signup page
+        return () => clearTimeout(timer);
+      }
     }
   }, [user, authState, navigate, signupSuccess]);
 
   // Handle social login placeholders
   const handleGoogleLogin = () => {
-    setErrors({ email: '', password: '', confirmPassword: '', general: 'Google login coming soon! Please use email for now.' });
+    setErrors({
+      email: '',
+      password: '',
+      confirmPassword: '',
+      general: 'Google login coming soon! Please use email for now.'
+    });
   };
 
   const handleGitHubLogin = () => {
-    setErrors({ email: '', password: '', confirmPassword: '', general: 'GitHub login coming soon! Please use email for now.' });
+    setErrors({
+      email: '',
+      password: '',
+      confirmPassword: '',
+      general: 'GitHub login coming soon! Please use email for now.'
+    });
   };
 
   // Clear field-specific error when user starts typing
-  const handleEmailChange = (e) => {
+  const handleEmailChange = e => {
     setEmail(e.target.value);
     if (errors.email) setErrors(prev => ({ ...prev, email: '' }));
     if (errors.general) setErrors(prev => ({ ...prev, general: '' }));
   };
 
-  const handlePasswordChange = (e) => {
+  const handlePasswordChange = e => {
     setPassword(e.target.value);
     if (errors.password) setErrors(prev => ({ ...prev, password: '' }));
     if (errors.general) setErrors(prev => ({ ...prev, general: '' }));
   };
 
-  const handleConfirmPasswordChange = (e) => {
+  const handleConfirmPasswordChange = e => {
     setConfirmPassword(e.target.value);
     if (errors.confirmPassword) setErrors(prev => ({ ...prev, confirmPassword: '' }));
     if (errors.general) setErrors(prev => ({ ...prev, general: '' }));
   };
 
-  const handleDisplayNameChange = (e) => {
+  const handleDisplayNameChange = e => {
     setDisplayName(e.target.value);
     if (errors.general) setErrors(prev => ({ ...prev, general: '' }));
   };
@@ -163,7 +270,21 @@ export default function Signup() {
               <p>Create your account to start scanning</p>
             </div>
 
-            <form onSubmit={handleSubmit} className="auth-form" noValidate>
+            <form
+              onSubmit={handleSubmit}
+              className="auth-form"
+              noValidate
+              autoComplete="off"
+              onKeyDown={e => {
+                // Prevent form submission on Enter if form is not ready
+                if (
+                  e.key === 'Enter' &&
+                  (loading || !email.trim() || !password || !confirmPassword)
+                ) {
+                  e.preventDefault();
+                }
+              }}
+            >
               <div className="form-group">
                 <label htmlFor="displayName">Display Name (optional)</label>
                 <input
@@ -185,13 +306,17 @@ export default function Signup() {
                   value={email}
                   onChange={handleEmailChange}
                   autoComplete="email"
+                  data-lpignore="true"
+                  data-form-type="other"
                   placeholder="Enter your email"
                   disabled={loading}
                   aria-invalid={!!errors.email}
                   aria-describedby={errors.email ? 'email-error' : undefined}
                 />
                 {errors.email && (
-                  <span id="email-error" className="field-error">{errors.email}</span>
+                  <span id="email-error" className="field-error">
+                    {errors.email}
+                  </span>
                 )}
               </div>
 
@@ -204,6 +329,8 @@ export default function Signup() {
                     value={password}
                     onChange={handlePasswordChange}
                     autoComplete="new-password"
+                    data-lpignore="true"
+                    data-form-type="other"
                     placeholder="At least 6 characters"
                     disabled={loading}
                     aria-invalid={!!errors.password}
@@ -220,7 +347,9 @@ export default function Signup() {
                   </button>
                 </div>
                 {errors.password && (
-                  <span id="password-error" className="field-error">{errors.password}</span>
+                  <span id="password-error" className="field-error">
+                    {errors.password}
+                  </span>
                 )}
               </div>
 
@@ -233,6 +362,8 @@ export default function Signup() {
                     value={confirmPassword}
                     onChange={handleConfirmPasswordChange}
                     autoComplete="new-password"
+                    data-lpignore="true"
+                    data-form-type="other"
                     placeholder="Re-enter your password"
                     disabled={loading}
                     aria-invalid={!!errors.confirmPassword}
@@ -240,12 +371,16 @@ export default function Signup() {
                   />
                 </div>
                 {errors.confirmPassword && (
-                  <span id="confirm-password-error" className="field-error">{errors.confirmPassword}</span>
+                  <span id="confirm-password-error" className="field-error">
+                    {errors.confirmPassword}
+                  </span>
                 )}
               </div>
 
               {errors.general && (
-                <div className="error-message" role="alert">{errors.general}</div>
+                <div className="error-message" role="alert">
+                  {errors.general}
+                </div>
               )}
 
               {success && (

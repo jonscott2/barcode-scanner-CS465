@@ -7,7 +7,6 @@ import {
   updateProfile
 } from 'firebase/auth';
 import {
-  auth,
   isFirebaseConfigured,
   initFirebaseRuntime,
   getAuthInstance
@@ -99,7 +98,7 @@ export function initAuth() {
 
   // Return a promise that resolves with the initial auth state
   // Add timeout to prevent hanging if Firebase doesn't respond
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     let resolved = false;
     let unsubscribe = null;
 
@@ -124,7 +123,7 @@ export function initAuth() {
         if (unsubscribe) {
           try {
             unsubscribe();
-          } catch (e) {
+          } catch {
             // Ignore unsubscribe errors
           }
         }
@@ -149,7 +148,7 @@ export function initAuth() {
             if (unsubscribe) {
               try {
                 unsubscribe();
-              } catch (e) {
+              } catch {
                 // Ignore unsubscribe errors
               }
             }
@@ -165,7 +164,7 @@ export function initAuth() {
             if (unsubscribe) {
               try {
                 unsubscribe();
-              } catch (e) {
+              } catch {
                 // Ignore unsubscribe errors
               }
             }

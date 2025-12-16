@@ -104,3 +104,4 @@ Once configured, product images will:
 
 The system will automatically fall back to other sources (Unsplash, Pixabay) if Google fails or isn't configured.
 
+

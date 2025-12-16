@@ -16,7 +16,7 @@ export function getTheme() {
     if (stored === 'light' || stored === 'dark') {
       return stored;
     }
-  } catch (e) {
+  } catch {
     // localStorage not available
   }
 
@@ -118,4 +118,6 @@ export function initTheme() {
     }
   }
 }
+
+
 

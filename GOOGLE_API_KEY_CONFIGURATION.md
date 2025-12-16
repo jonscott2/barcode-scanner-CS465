@@ -106,3 +106,4 @@ If you get stuck:
 2. Check browser console for error messages
 3. Verify both API key and Engine ID are correct
 
+

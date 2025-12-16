@@ -220,11 +220,45 @@ function ProtectedRoutes() {
  *
  * Auth state logic:
  * - If loading: show spinner
- * - If authenticated (user exists OR authState is 'authenticated'): redirect to app
+ * - If authenticated (user exists OR authState is 'authenticated' OR Firebase has user): redirect to app
  * - Otherwise: show public content
  */
 function PublicRoute({ children, redirectAuthenticated = true }) {
   const { user, loading, authState } = useAuth();
+  const [firebaseUser, setFirebaseUser] = useState(null);
+
+  // Check Firebase auth directly as a fallback (in case React state hasn't updated yet)
+  // This is critical for immediate redirects after login
+  useEffect(() => {
+    let unsubscribe = null;
+    
+    try {
+      const auth = getAuth();
+      if (auth) {
+        // Check current user immediately
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          setFirebaseUser(currentUser);
+        }
+        
+        // Listen for auth state changes to catch immediate updates
+        // This fires immediately with current user, then on every change
+        unsubscribe = auth.onAuthStateChanged(newUser => {
+          console.log('PublicRoute: Firebase auth state changed', newUser ? newUser.uid : 'null');
+          setFirebaseUser(newUser);
+        });
+      }
+    } catch (e) {
+      // Firebase not initialized or error
+      setFirebaseUser(null);
+    }
+    
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, []); // Only run once on mount - the listener will catch all changes
 
   // Show loading while auth state is being determined
   if (loading || authState === 'loading') {
@@ -232,8 +266,12 @@ function PublicRoute({ children, redirectAuthenticated = true }) {
   }
 
   // Redirect authenticated users to app home
-  // Check both user and authState to be thorough
-  if (redirectAuthenticated && (user || authState === 'authenticated')) {
+  // Check React state AND Firebase directly to catch immediate auth changes
+  const isAuthenticated = user || authState === 'authenticated' || firebaseUser;
+  
+  if (redirectAuthenticated && isAuthenticated) {
+    // Use Navigate component for React Router navigation
+    // This will work with HashRouter
     return <Navigate to="/app/home" replace />;
   }
 
